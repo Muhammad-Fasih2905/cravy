@@ -14,7 +14,6 @@ export default function Home() {
   return (
     <main>
       <Hero />
-      <Marquee />
       <div className="mx-auto max-w-6xl space-y-24 px-5 py-20">
         <Categories />
         <section aria-labelledby="featured">
