@@ -15,7 +15,7 @@ export function Testimonials() {
   const scroll = (dir: 1 | -1) => rail.current?.scrollBy({ left: dir * (rail.current.clientWidth * 0.8), behavior: "smooth" });
 
   return (
-    <section aria-labelledby="reviews-h" className="overflow-hidden rounded-[2rem] bg-vanilla px-5 py-12 sm:px-10">
+    <section id="reviews" aria-labelledby="reviews-h" className="overflow-hidden rounded-[2rem] bg-vanilla px-5 py-12 sm:px-10">
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="chip bg-white"><FcGoogle aria-hidden className="mr-2" />Google reviews</p>
