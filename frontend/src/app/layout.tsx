@@ -1,11 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, DM_Sans } from "next/font/google";
+import logo from "@/assets/CravyLogo.jpeg";
 import { SITE } from "@/config/site";
 import { getPreloadedState } from "@/lib/preload";
 import { StoreProvider } from "@/components/StoreProvider";
-import { Navbar } from "@/components/Navbar";
-import { CartDrawer } from "@/components/CartDrawer";
-import { Footer } from "@/components/Footer";
+import { SiteChrome } from "@/components/SiteChrome";
 import "./globals.css";
 
 const display = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-display", display: "swap" });
@@ -17,9 +16,10 @@ export const metadata: Metadata = {
   title: { default: `${SITE.name}: ${SITE.headline}`, template: `%s | ${SITE.name}` },
   description: SITE.description,
   alternates: { canonical: "/" },
-  openGraph: { type: "website", siteName: SITE.name, title: SITE.name, description: SITE.description },
+  icons: { icon: [{ url: logo.src, type: "image/jpeg" }], shortcut: logo.src, apple: logo.src },
+  openGraph: { type: "website", siteName: SITE.name, title: SITE.name, description: SITE.description, images: [{ url: logo.src, width: logo.width, height: logo.height, alt: "Cravy" }] },
 };
-export const viewport: Viewport = { themeColor: "#0F3D2E", width: "device-width", initialScale: 1 };
+export const viewport: Viewport = { themeColor: "#05342D", width: "device-width", initialScale: 1 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const preloadedState = await getPreloadedState();
@@ -27,10 +27,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en" className={`${display.variable} ${body.variable}`}>
       <body>
         <StoreProvider preloadedState={preloadedState}>
-          <Navbar />
-          {children}
-          <Footer />
-          <CartDrawer />
+          <SiteChrome>{children}</SiteChrome>
         </StoreProvider>
       </body>
     </html>

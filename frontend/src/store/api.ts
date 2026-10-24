@@ -4,8 +4,8 @@ import type { Menu, OrderInput, OrderResult, Product, PublicSettings, Quote, Car
 // Browser calls NEXT_PUBLIC_API_URL; the Next.js server (preloading) calls API_URL.
 const baseUrl =
   typeof window === "undefined"
-    ? process.env.API_URL ?? "http://localhost:8000"
-    : process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    ? process.env.API_URL ?? "https://cravy-backend-production.up.railway.app"
+    : process.env.NEXT_PUBLIC_API_URL ?? "https://cravy-backend-production.up.railway.app";
 
 export type AdminOrder = {
   order_number: string; status: string; created_at: string; customer_name: string; customer_phone: string;

@@ -11,6 +11,7 @@ import {
 import { api } from "@/store/api";
 import { useAppDispatch } from "@/store/hooks";
 import { Select } from "../Select";
+import { AdminHeader } from "./AdminHeader";
 import { Logo } from "../brand/Logo";
 
 const STATUSES = ["PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY_FOR_DISPATCH", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"];
@@ -32,21 +33,17 @@ export function AdminApp() {
 
   const tabs: [Tab, string, React.ElementType][] = [["overview", "Overview", FiGrid], ["orders", "Orders", FiList], ["products", "Products", FiBox], ["delivery", "Delivery", FiMapPin], ["settings", "Settings", FiSettings]];
   return (
-    <main className="mx-auto max-w-6xl px-5 py-8">
-      <div className="flex items-center justify-between print:hidden">
-        <Logo /><button className="btn-secondary min-h-[44px] gap-2 px-4" onClick={() => { sessionStorage.removeItem("cravy-admin"); setToken(null); }}><FiLogOut aria-hidden />Log out</button>
-      </div>
-      <div role="tablist" className="my-6 flex gap-2 overflow-x-auto pb-1 print:hidden">
-        {tabs.map(([id, name, Icon]) => (
-          <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={`chip min-h-[44px] shrink-0 gap-2 px-5 ${tab === id ? "!bg-forest !text-cream" : ""}`}><Icon aria-hidden />{name}</button>
-        ))}
-      </div>
+    <div className="min-h-screen bg-cream">
+      <AdminHeader tab={tab} onTab={(id) => setTab(id as Tab)} tabs={tabs.map(([id, name, icon]) => ({ id, name, icon }))}
+        onLogout={() => { sessionStorage.removeItem("cravy-admin"); setToken(null); }} />
+      <main className="mx-auto max-w-6xl px-5 py-8">
       <AnimatePresence mode="wait">
         <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
           {tab === "overview" && <Overview />}{tab === "orders" && <Orders />}{tab === "products" && <Products />}{tab === "delivery" && <Zones />}{tab === "settings" && <SettingsForm />}
         </motion.div>
       </AnimatePresence>
     </main>
+    </div>
   );
 }
 
@@ -55,9 +52,9 @@ function Login({ onDone }: { onDone: (t: string) => void }) {
   const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
   const msg = error && "data" in error ? ((error.data as { detail?: string })?.detail ?? "Login failed") : error ? "Could not reach the server" : "";
   return (
-    <main className="grid min-h-[70vh] place-items-center px-5">
+    <main className="grid min-h-screen place-items-center bg-forest px-5" style={{ backgroundImage: "radial-gradient(50% 60% at 100% 0%, rgba(246,184,32,.2), transparent 70%), radial-gradient(45% 55% at 0% 100%, rgba(168,230,207,.14), transparent 70%)" }}>
       <form className="card w-full max-w-sm space-y-4 p-8" onSubmit={async (e) => { e.preventDefault(); try { onDone((await login({ email, password }).unwrap()).token); } catch {} }}>
-        <Logo /><h1 className="text-2xl">Admin login</h1>
+        <Logo className="h-12" /><h1 className="text-2xl">Admin login</h1>
         <label className="block">Email<input className={input} type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required /></label>
         <label className="block">Password<input className={input} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required /></label>
         {msg && <p role="alert" className="text-sm text-strawberry">{msg}</p>}
