@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   title: { default: `${SITE.name}: ${SITE.headline}`, template: `%s | ${SITE.name}` },
   description: SITE.description,
   alternates: { canonical: "/" },
-  icons: { icon: [{ url: logo.src, type: "image/jpeg" }], shortcut: logo.src, apple: logo.src },
+  icons: { icon: [{ url: logo.src, type: "image/png" }], shortcut: logo.src, apple: logo.src },
   openGraph: { type: "website", siteName: SITE.name, title: SITE.name, description: SITE.description, images: [{ url: logo.src, width: logo.width, height: logo.height, alt: "Cravy" }] },
 };
 export const viewport: Viewport = { themeColor: "#05342D", width: "device-width", initialScale: 1 };

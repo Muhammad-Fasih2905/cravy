@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
-import logo from "@/assets/CravyLogo.jpeg";
+import logo from "@/assets/CravyLogoNavbar.png";
 
 /**
  * The Cravy logo, used exactly as supplied: src/assets/CravyLogo.jpeg (not edited, recoloured or re-drawn).
