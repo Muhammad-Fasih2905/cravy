@@ -1,14 +1,13 @@
 "use client";
 import Link from "next/link";
-import { useId } from "react";
-import { motion, useReducedMotion } from "framer-motion";
-import { FiArrowUp, FiArrowUpRight, FiCreditCard, FiPhone, FiShield, FiSmartphone, FiTruck } from "react-icons/fi";
-import { Logo } from "@/components/brand/Logo";
+import { useId, useRef } from "react";
+import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
+import { FiArrowUpRight, FiCreditCard, FiPhone, FiShield, FiSmartphone, FiTruck } from "react-icons/fi";
+import Image from "next/image";
+import logo from "@/assets/CravyLogoNavbar.png";
 import { Reveal } from "@/components/Reveal";
 import { SITE } from "@/config/site";
 import { useGetMenuQuery, useGetSettingsQuery } from "@/store/api";
-
-const LETTER_COLORS = ["#F6B820", "#E5384F", "#A8E6CF", "#F3E6C4", "#F26B7F"];
 
 /** Round "Order now" button with a slowly turning text ring. */
 function OrderDisc({ reduce }: { reduce: boolean | null }) {
@@ -39,6 +38,10 @@ function FooterLink({ href, children }: { href: string; children: React.ReactNod
 
 export function Footer() {
   const reduce = useReducedMotion();
+  const gridRef = useRef<HTMLDivElement>(null);
+  // the light wordmark behind the columns drifts sideways a little while you scroll past
+  const { scrollYProgress } = useScroll({ target: gridRef, offset: ["start end", "end start"] });
+  const drift = useTransform(scrollYProgress, [0, 1], ["-6%", "6%"]);
   const { data: settings } = useGetSettingsQuery();
   const { data: menu } = useGetMenuQuery();
   const cats = menu?.categories.slice(0, 8) ?? [];
@@ -68,9 +71,18 @@ export function Footer() {
         </Reveal>
 
         {/* link columns, separated by hairlines */}
-        <div className="grid gap-12 border-t border-cream/15 py-14 sm:grid-cols-2 lg:grid-cols-12 lg:gap-10">
+        <div ref={gridRef} className="relative isolate grid gap-12 border-t border-cream/15 py-14 sm:grid-cols-2 lg:grid-cols-12 lg:gap-10">
+          {/* light giant wordmark behind the columns */}
+          <motion.div aria-hidden style={reduce ? undefined : { x: drift }} className="pointer-events-none absolute inset-0 -z-10 flex select-none items-center justify-center">
+            <div className="flex justify-center font-display text-[clamp(5rem,23vw,21rem)] font-extrabold leading-[.8] tracking-tighter">
+              {"CRAVY".split("").map((ch, i) => (
+                <motion.span key={i} className="inline-block bg-gradient-to-b from-cream/[.16] to-cream/[.02] bg-clip-text px-[.01em] text-transparent" initial={reduce ? false : { opacity: 0, y: 50 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.8, delay: i * 0.09, ease: "easeOut" }}>{ch}</motion.span>
+              ))}
+            </div>
+          </motion.div>
+
           <Reveal className="lg:col-span-3">
-            <Link href="/" aria-label="Cravy home" className="inline-block"><Logo tone="cream" className="text-4xl" /></Link>
+            <Link href="/" aria-label="Cravy home" className="inline-block"><Image src={logo} alt="Cravy" sizes="300px" className="h-14 w-auto sm:h-16" /></Link>
             <p className="mt-5 max-w-xs leading-relaxed text-cream/70">{SITE.description}</p>
           </Reveal>
 
@@ -112,20 +124,11 @@ export function Footer() {
         </div>
       </div>
 
-  {/* giant wordmark: letters pop and change colour on hover */}
-      <div className="relative -mb-[0vw] mt-10 select-none overflow-hidden text-center" aria-label="Cravy" role="img">
-        <div aria-hidden className="flex justify-center font-display text-[clamp(5.5rem,27vw,24rem)] font-extrabold leading-[.8] tracking-tighter">
-          {"CRAVY".split("").map((ch, i) => (
-            <motion.span key={i} className="inline-block cursor-default px-[.01em] text-cream/[.14]" whileHover={reduce ? undefined : { y: -24, rotate: i % 2 ? 5 : -5, color: LETTER_COLORS[i % LETTER_COLORS.length] }} whileTap={reduce ? undefined : { y: -24, color: LETTER_COLORS[i % LETTER_COLORS.length] }} transition={{ type: "spring", stiffness: 300, damping: 14 }}>{ch}</motion.span>
-          ))}
-        </div>
-      </div>
-
-      {/* <div className="relative border-t border-cream/15 bg-black/20 backdrop-blur">
+      <div className="relative border-t border-cream/15 bg-black/20 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-5 text-sm text-cream/70 sm:px-6">
           <p>© {new Date().getFullYear()} {settings?.business_name ?? "Cravy"}. All rights reserved.</p>
         </div>
-      </div> */}
+      </div>
     </footer>
   );
 }
