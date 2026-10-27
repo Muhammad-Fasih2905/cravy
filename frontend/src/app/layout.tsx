@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, DM_Sans } from "next/font/google";
-import logo from "@/assets/CravyLogo.jpeg";
+import logo from "@/assets/CravyLogo.webp";
 import { SITE } from "@/config/site";
 import { getPreloadedState } from "@/lib/preload";
 import { StoreProvider } from "@/components/StoreProvider";

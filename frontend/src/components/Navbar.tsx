@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { AnimatePresence, motion, useScroll, useSpring } from "framer-motion";
 import { FiShoppingBag, FiArrowUpRight } from "react-icons/fi";
 import Image from "next/image";
-import logo from "@/assets/CravyLogoNavbar.png";
+import logo from "@/assets/CravyLogoNavbar.webp";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { setOpen } from "@/store/cartSlice";
 import { useEffect, useRef, useState } from "react";

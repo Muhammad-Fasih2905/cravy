@@ -4,7 +4,7 @@ import { useId, useRef } from "react";
 import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
 import { FiArrowUpRight, FiCreditCard, FiPhone, FiShield, FiSmartphone, FiTruck } from "react-icons/fi";
 import Image from "next/image";
-import logo from "@/assets/CravyLogoNavbar.png";
+import logo from "@/assets/CravyLogoNavbar.webp";
 import { Reveal } from "@/components/Reveal";
 import { SITE } from "@/config/site";
 import { useGetMenuQuery, useGetSettingsQuery } from "@/store/api";
