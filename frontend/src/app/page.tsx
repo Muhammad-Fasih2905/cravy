@@ -14,7 +14,7 @@ export default function Home() {
   return (
     <main>
       <Hero />
-      <div className="mx-auto max-w-6xl space-y-24 px-5 py-20">
+      <div className="mx-4 max-w-0xl space-y-14 px-4 pb-6 pt-12 sm:space-y-20 sm:px-5 sm:pb-12 sm:pt-16 lg:space-y-24 lg:py-20">
         <Categories />
         <section aria-labelledby="featured">
           <Reveal className="mb-8 flex flex-wrap items-end justify-between gap-3">

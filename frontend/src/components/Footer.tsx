@@ -54,7 +54,7 @@ export function Footer() {
   const explore: [string, string][] = [["Menu", "/menu"], ["Featured treats", "/#featured"], ["Reviews", "/#reviews"], ["FAQ", "/#faq"]];
 
   return (
-    <footer className="relative mt-24 overflow-hidden rounded-t-[2rem] bg-[#0A2A20] text-cream sm:rounded-t-[3rem]"
+    <footer className="relative mt-15 overflow-hidden rounded-t-[2rem] bg-[#0A2A20] text-cream sm:rounded-t-[3rem]"
       style={{ backgroundImage: "radial-gradient(50% 40% at 0% 0%, rgba(246,184,32,.14), transparent 70%), radial-gradient(45% 40% at 100% 70%, rgba(229,56,79,.12), transparent 70%)" }}>
       <div aria-hidden className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-mango/70 to-transparent" />
       <div aria-hidden className="absolute inset-0 opacity-[.04]" style={{ backgroundImage: "radial-gradient(#fff 1.2px, transparent 1.2px)", backgroundSize: "26px 26px" }} />
