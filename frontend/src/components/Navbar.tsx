@@ -75,11 +75,10 @@ export function Navbar() {
             over product cards and over the hero. Scrolling makes it denser, more compact and adds a shadow. */}
         <nav
           aria-label="Main"
-          className={`relative mx-auto grid w-full max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-2 overflow-hidden rounded-full border px-3 transition-all duration-500 sm:gap-4 sm:px-4 ${
-            isScrolled || isOpen
+          className={`relative mx-auto grid w-full max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-2 overflow-hidden rounded-full border px-3 transition-all duration-500 sm:gap-4 sm:px-4 ${isScrolled || isOpen
               ? "border-cream/15 bg-forest/95 py-1.5 shadow-[0_18px_40px_-16px_rgba(0,0,0,.65)] backdrop-blur-xl"
               : "border-cream/10 bg-forest/90 py-2.5 shadow-[0_10px_30px_-18px_rgba(0,0,0,.5)] backdrop-blur-md"
-          }`}
+            }`}
         >
           <Link
             href="/"
@@ -166,13 +165,7 @@ export function Navbar() {
               </span>
             </motion.button>
           </div>
-
-          {/* Scroll progress line: runs along the bottom edge of the bar */}
-          <motion.span
-            aria-hidden
-            style={{ scaleX: progress }}
-            className={`absolute inset-x-0 bottom-0 h-[3px] origin-left bg-mango transition-opacity duration-300 ${isScrolled ? "opacity-100" : "opacity-0"}`}
-          />
+ 
         </nav>
       </header>
 
