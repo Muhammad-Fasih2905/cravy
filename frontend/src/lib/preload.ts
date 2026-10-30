@@ -12,7 +12,7 @@ export const getPreloadedState = cache(async () => {
   await Promise.allSettled([
     store.dispatch(api.endpoints.getMenu.initiate()),
     store.dispatch(api.endpoints.getSettings.initiate()),
-    store.dispatch(api.endpoints.getZones.initiate()),
+    store.dispatch(api.endpoints.getDeliveryRates.initiate()),
   ]);
   return store.getState();
 });

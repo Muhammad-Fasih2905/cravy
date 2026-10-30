@@ -1,48 +1,106 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FiBox, FiFileText, FiMapPin, FiSliders, FiGrid, FiImage, FiList, FiLogOut, FiPlus, FiPrinter, FiSettings, FiTrash2 } from "react-icons/fi";
+import { FiBox, FiCheckCircle, FiFileText, FiGrid, FiImage, FiList, FiMapPin, FiNavigation, FiPlus, FiPrinter, FiSettings, FiSliders, FiTrash2, FiX } from "react-icons/fi";
 import { formatPKR } from "@/lib/money";
 import {
   useAdminLoginMutation, useAdminOrdersQuery, useAdminPatchProductMutation, useAdminProductsQuery,
   useAdminSaveSettingsMutation, useAdminSetPaymentMutation, useAdminSetStatusMutation, useAdminSettingsQuery,
-  useAdminStatsQuery, useAdminCategoriesQuery, useAdminZonesQuery, useAdminCreateZoneMutation, useAdminPatchZoneMutation, useAdminDeleteZoneMutation, useAdminOptionsQuery, useAdminSaveOptionsMutation, type OptionRow, useAdminCreateProductMutation, useAdminDeleteProductMutation, type AdminOrder,
+  useAdminStatsQuery, useAdminCategoriesQuery, useAdminOptionsQuery, useAdminSaveOptionsMutation, type OptionRow,
+  useAdminCreateProductMutation, useAdminDeleteProductMutation, type AdminOrder,
 } from "@/store/api";
 import { api } from "@/store/api";
 import { useAppDispatch } from "@/store/hooks";
 import { Select } from "../Select";
 import { AdminHeader } from "./AdminHeader";
-import { Logo } from "../brand/Logo";
+import { AdminLogo } from "../brand/AdminLogo";
+import { DeliveryRates } from "../DeliveryRates";
+import { PUBLIC_API } from "@/lib/config";
+import { confirmToast } from "@/lib/notify";
+import { openReceipt, printSlip } from "@/lib/adminFetch";
+import { useOrderStream, type StreamState } from "@/lib/useOrderStream";
 
-const STATUSES = ["PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY_FOR_DISPATCH", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"];
-const PAY = ["UNPAID", "PENDING_VERIFICATION", "PAID", "FAILED", "REFUNDED"];
+const PAY = ["UNPAID", "AWAITING_PAYMENT", "PENDING_VERIFICATION", "PAID", "FAILED", "REFUNDED"];
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
+const METHOD: Record<string, string> = { COD: "Cash on Delivery", EASYPAISA: "Easypaisa" };
 const opts = (a: string[], all?: string) => [...(all ? [{ value: "", label: all }] : []), ...a.map((v) => ({ value: v, label: label(v) }))];
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API = PUBLIC_API;
 const authHeader = () => ({ authorization: `Bearer ${sessionStorage.getItem("cravy-admin")}` });
 const input = "min-h-[44px] w-full rounded-2xl border-2 border-vanilla-deep bg-white px-4";
+const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-PK", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "");
+/** The message the server sent back (for example "This order is already completed"), or a generic one. */
+const apiError = (e: unknown) => {
+  const d = (e as { data?: { detail?: unknown } })?.data?.detail;
+  return typeof d === "string" ? d : "Could not reach the server. Please try again.";
+};
 
 type Tab = "overview" | "orders" | "products" | "delivery" | "settings";
+type OrderTab = "PENDING" | "COMPLETED" | "CANCELLED" | "ALL";
+
+/** A short chime for a new order (browsers allow it because the admin has already interacted with the page). */
+function chime() {
+  try {
+    const C = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new C(), o = ctx.createOscillator(), g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination); o.type = "sine"; o.frequency.value = 880;
+    g.gain.setValueAtTime(0.001, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+    o.start(); o.stop(ctx.currentTime + 0.6); setTimeout(() => ctx.close(), 900);
+  } catch { /* sound is a nice-to-have */ }
+}
 
 export function AdminApp() {
   const [token, setToken] = useState<string | null | undefined>(undefined);
-  const [tab, setTab] = useState<Tab>("overview");
   useEffect(() => setToken(sessionStorage.getItem("cravy-admin")), []);
   if (token === undefined) return null;
   if (!token) return <Login onDone={(t) => { sessionStorage.setItem("cravy-admin", t); setToken(t); }} />;
+  return <Dashboard onLogout={() => { sessionStorage.removeItem("cravy-admin"); setToken(null); }} />;
+}
+
+function LivePill({ state }: { state: StreamState }) {
+  const cfg = { live: ["bg-mint/50 text-forest", "bg-forest", "Live"], connecting: ["bg-vanilla text-forest", "bg-mango", "Connecting…"], offline: ["bg-mango/30 text-forest", "bg-strawberry", "Reconnecting…"] }[state];
+  return <span role="status" className={`inline-flex items-center gap-2 rounded-pill px-3 py-1 text-xs font-bold ${cfg[0]}`}><span aria-hidden className={`h-2 w-2 rounded-full ${cfg[1]} ${state === "live" ? "animate-pulse" : ""}`} />{cfg[2]}</span>;
+}
+
+/** Everything that needs a logged-in admin. It owns the live order stream, so orders stay current on every tab. */
+function Dashboard({ onLogout }: { onLogout: () => void }) {
+  const [tab, setTab] = useState<Tab>("overview");
+  const [orderTab, setOrderTab] = useState<OrderTab>("PENDING");
+  const [alerts, setAlerts] = useState<AdminOrder[]>([]);
+  const onNew = useCallback((o: AdminOrder) => { setAlerts((a) => [o, ...a].slice(0, 3)); chime(); }, []);
+  const stream = useOrderStream(onNew);
+  // Always re-read on entering the dashboard; poll as a safety net whenever the live connection is down.
+  const { error } = useAdminOrdersQuery(undefined, { refetchOnMountOrArgChange: true, pollingInterval: stream === "live" ? 0 : 10000 });
+  const { data: stats } = useAdminStatsQuery();
+  useEffect(() => { if (error && "status" in error && error.status === 401) onLogout(); }, [error, onLogout]); // login expired
+  useEffect(() => { if (alerts.length) { const t = setTimeout(() => setAlerts((a) => a.slice(0, -1)), 12000); return () => clearTimeout(t); } }, [alerts]);
+  useEffect(() => {
+    const n = stats?.pending_orders ?? 0;
+    document.title = n > 0 ? `(${n}) Pending orders | Cravy Admin` : "Admin | Cravy";
+  }, [stats?.pending_orders]);
 
   const tabs: [Tab, string, React.ElementType][] = [["overview", "Overview", FiGrid], ["orders", "Orders", FiList], ["products", "Products", FiBox], ["delivery", "Delivery", FiMapPin], ["settings", "Settings", FiSettings]];
+  const openPending = () => { setOrderTab("PENDING"); setTab("orders"); setAlerts([]); };
   return (
     <div className="min-h-screen bg-cream">
-      <AdminHeader tab={tab} onTab={(id) => setTab(id as Tab)} tabs={tabs.map(([id, name, icon]) => ({ id, name, icon }))}
-        onLogout={() => { sessionStorage.removeItem("cravy-admin"); setToken(null); }} />
+      <AdminHeader tab={tab} onTab={(id) => setTab(id as Tab)} tabs={tabs.map(([id, name, icon]) => ({ id, name, icon }))} onLogout={onLogout} />
+      <div aria-live="polite" className="pointer-events-none fixed inset-x-0 top-3 z-50 mx-auto flex max-w-md flex-col gap-2 px-3 print:hidden">
+        {alerts.map((o) => (
+          <div key={o.order_number} className="pointer-events-auto flex items-center gap-3 rounded-2xl bg-forest p-4 text-cream shadow-lift">
+            <FiCheckCircle aria-hidden className="shrink-0 text-mango" size={22} />
+            <div className="min-w-0 flex-1 text-sm"><p className="font-bold">New order · {formatPKR(o.total)}</p><p className="truncate">{o.order_number} · {o.customer_name}</p></div>
+            <button className="rounded-pill bg-mango px-3 py-2 text-sm font-bold text-forest" onClick={openPending}>View</button>
+            <button aria-label="Dismiss" className="grid h-9 w-9 place-items-center rounded-full hover:bg-cream/10" onClick={() => setAlerts((a) => a.filter((x) => x.order_number !== o.order_number))}><FiX /></button>
+          </div>
+        ))}
+      </div>
       <main className="mx-auto max-w-6xl px-5 py-8">
-      <AnimatePresence mode="wait">
-        <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-          {tab === "overview" && <Overview />}{tab === "orders" && <Orders />}{tab === "products" && <Products />}{tab === "delivery" && <Zones />}{tab === "settings" && <SettingsForm />}
-        </motion.div>
-      </AnimatePresence>
-    </main>
+        <div className="mb-4 flex justify-end print:hidden"><LivePill state={stream} /></div>
+        <AnimatePresence mode="wait">
+          <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+            {tab === "overview" && <Overview />}{tab === "orders" && <Orders filter={orderTab} setFilter={setOrderTab} />}{tab === "products" && <Products />}{tab === "delivery" && <DeliveryTab />}{tab === "settings" && <SettingsForm />}
+          </motion.div>
+        </AnimatePresence>
+      </main>
     </div>
   );
 }
@@ -53,8 +111,8 @@ function Login({ onDone }: { onDone: (t: string) => void }) {
   const msg = error && "data" in error ? ((error.data as { detail?: string })?.detail ?? "Login failed") : error ? "Could not reach the server" : "";
   return (
     <main className="grid min-h-screen place-items-center bg-forest px-5" style={{ backgroundImage: "radial-gradient(50% 60% at 100% 0%, rgba(246,184,32,.2), transparent 70%), radial-gradient(45% 55% at 0% 100%, rgba(168,230,207,.14), transparent 70%)" }}>
-      <form className="card w-full max-w-sm space-y-4 p-8" onSubmit={async (e) => { e.preventDefault(); try { onDone((await login({ email, password }).unwrap()).token); } catch {} }}>
-        <Logo className="h-12" /><h1 className="text-2xl">Admin login</h1>
+      <form className="card w-full max-w-sm space-y-4 p-8" onSubmit={async (e) => { e.preventDefault(); try { onDone((await login({ email, password }).unwrap()).token); } catch { } }}>
+        <AdminLogo priority className="h-12" /><h1 className="text-2xl">Admin login</h1>
         <label className="block">Email<input className={input} type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required /></label>
         <label className="block">Password<input className={input} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required /></label>
         {msg && <p role="alert" className="text-sm text-strawberry">{msg}</p>}
@@ -69,18 +127,18 @@ function Overview() {
   if (isError) return <p role="alert">Could not load stats. Your session may have expired, please log in again.</p>;
   if (!s) return <div className="h-40 animate-pulse rounded-card bg-vanilla" />;
   const max = Math.max(1, ...s.daily_sales.map((d) => d.total));
-  const cards = [["Total orders", s.total_orders], ["Today's orders", s.today_orders], ["Total sales", formatPKR(s.total_sales)], ["Pending orders", s.pending_orders], ["Completed", s.completed_orders], ["Payments to verify", s.pending_payments]];
+  const cards = [["Pending orders", s.pending_orders], ["To collect (pending)", formatPKR(s.pending_amount)], ["Completed", s.completed_orders], ["Total sales (received)", formatPKR(s.total_sales)], ["Today's orders", s.today_orders], ["Total orders", s.total_orders], ["Cancelled", s.cancelled_orders], ["Payments to verify", s.pending_payments]];
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {cards.map(([n, v], i) => (
           <motion.div key={n} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="card p-5">
-            <p className="text-sm">{n}</p><p className="font-display text-3xl font-extrabold text-forest">{v}</p>
+            <p className="text-sm">{n}</p><p className="font-display text-2xl font-extrabold text-forest sm:text-3xl">{v}</p>
           </motion.div>
         ))}
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="card p-5" aria-label="Sales, last 7 days"><h2 className="mb-4 text-lg">Sales, last 7 days</h2>
+        <section className="card p-5" aria-label="Sales received, last 7 days"><h2 className="mb-4 text-lg">Sales received, last 7 days</h2>
           <div className="flex h-40 items-end gap-2">
             {s.daily_sales.map((d) => (
               <div key={d.date} className="flex flex-1 flex-col items-center gap-1" title={`${d.date}: ${formatPKR(d.total)}`}>
@@ -98,52 +156,114 @@ function Overview() {
   );
 }
 
-function Orders() {
-  const [status, setStatus] = useState(""); const [method, setMethod] = useState(""); const [q, setQ] = useState("");
-  const { data = [], isFetching, isError } = useAdminOrdersQuery({ status, method, q });
+function Orders({ filter, setFilter }: { filter: OrderTab; setFilter: (f: OrderTab) => void }) {
+  const [method, setMethod] = useState(""); const [q, setQ] = useState("");
+  const { data: all = [], isLoading, isError } = useAdminOrdersQuery();
+  const counts = useMemo(() => ({
+    PENDING: all.filter((o) => o.status === "PENDING").length, COMPLETED: all.filter((o) => o.status === "COMPLETED").length,
+    CANCELLED: all.filter((o) => o.status === "CANCELLED").length, ALL: all.length,
+  }), [all]);
+  const list = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return all.filter((o) => (filter === "ALL" || o.status === filter) && (!method || o.payment_method === method)
+      && (!s || o.order_number.toLowerCase().includes(s) || o.customer_phone.toLowerCase().includes(s) || o.customer_name.toLowerCase().includes(s)));
+  }, [all, filter, method, q]);
+  const tabs: [OrderTab, string][] = [["PENDING", "Pending"], ["COMPLETED", "Completed"], ["CANCELLED", "Cancelled"], ["ALL", "All"]];
   return (
     <div className="space-y-4">
+      <div role="tablist" aria-label="Order status" className="flex flex-wrap gap-2 print:hidden">
+        {tabs.map(([id, name]) => (
+          <button key={id} role="tab" aria-selected={filter === id} onClick={() => setFilter(id)}
+            className={`inline-flex min-h-[44px] items-center gap-2 rounded-pill px-5 font-bold transition-colors ${filter === id ? "bg-forest text-cream" : "bg-white text-forest ring-1 ring-vanilla-deep hover:bg-vanilla"}`}>
+            {name}<span className={`rounded-pill px-2 text-sm ${filter === id ? "bg-cream/20" : id === "PENDING" && counts.PENDING > 0 ? "bg-mango text-forest" : "bg-vanilla"}`}>{counts[id]}</span>
+          </button>
+        ))}
+      </div>
       <div className="flex flex-col gap-3 sm:flex-row print:hidden">
         <input className={`${input} sm:max-w-xs`} placeholder="Search number, name, phone" aria-label="Search orders" value={q} onChange={(e) => setQ(e.target.value)} />
-        <Select label="Status" value={status} onChange={setStatus} options={opts(STATUSES, "All statuses")} />
-        <Select label="Payment" value={method} onChange={setMethod} options={opts(["COD", "EASYPAISA", "BANK_TRANSFER"], "All methods")} />
+        <Select label="Payment" value={method} onChange={setMethod} options={[{ value: "", label: "All payment methods" }, { value: "COD", label: "Cash on Delivery" }, { value: "EASYPAISA", label: "Easypaisa" }]} />
       </div>
-      {isError && <p role="alert">Could not load orders.</p>}
-      {!isFetching && data.length === 0 && <p className="card p-6">No orders found.</p>}
-      {data.map((o) => <OrderCard key={o.order_number} o={o} />)}
+      {isError && <p role="alert" className="rounded-2xl bg-strawberry/10 p-4 text-strawberry">Could not load orders. Your session may have expired, please log in again.</p>}
+      {isLoading && <div className="h-32 animate-pulse rounded-card bg-vanilla" />}
+      {!isLoading && !isError && list.length === 0 && <p className="card p-6">{filter === "PENDING" ? "No pending orders. New orders appear here by themselves." : "No orders found."}</p>}
+      {list.map((o) => <OrderCard key={o.order_number} o={o} />)}
     </div>
   );
 }
 
+const STATUS_STYLE: Record<string, string> = { PENDING: "bg-mango/40", COMPLETED: "bg-mint/60", CANCELLED: "bg-strawberry/15 text-strawberry" };
+
 function OrderCard({ o }: { o: AdminOrder }) {
-  const [setStatus] = useAdminSetStatusMutation(); const [setPayment, { isLoading }] = useAdminSetPaymentMutation();
+  const [setStatus, { isLoading: changing }] = useAdminSetStatusMutation();
+  const [setPayment, { isLoading: payBusy }] = useAdminSetPaymentMutation();
   const [note, setNote] = useState(o.admin_note ?? "");
+  const [err, setErr] = useState("");
+  const cod = o.payment_method === "COD";
+  const pending = o.status === "PENDING";
+  const canComplete = pending && (cod || o.payment_status === "PAID");
+
+  async function move(status: "COMPLETED" | "CANCELLED") {
+    const msg = status === "COMPLETED"
+      ? `Mark ${o.order_number} as completed?\n\nThis confirms ${formatPKR(o.total)} has been received.`
+      : `Cancel ${o.order_number}? This cannot be undone.`;
+    const sure = await confirmToast(msg, status === "COMPLETED"
+      ? { confirmLabel: "Yes, completed", cancelLabel: "Not yet" }
+      : { confirmLabel: "Yes, cancel order", cancelLabel: "Keep order", danger: true });
+    if (!sure) return;
+    setErr("");
+    try { await setStatus({ n: o.order_number, status }).unwrap(); } catch (e) { setErr(apiError(e)); }
+  }
+  async function pay(status: string) {
+    setErr("");
+    try { await setPayment({ n: o.order_number, status, note }).unwrap(); } catch (e) { setErr(apiError(e)); }
+  }
+
   return (
-    <details className="card p-5">
+    <details className="card p-5" open={pending}>
       <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 font-bold">
         <span className="font-mono">{o.order_number}</span><span>{o.customer_name}</span><span>{formatPKR(o.total)}</span>
-        <span className="chip">{label(o.status)}</span><span className="chip bg-mango/30">{label(o.payment_method)} · {label(o.payment_status)}</span>
+        <span className={`chip ${STATUS_STYLE[o.status] ?? ""}`}>{label(o.status)}</span>
+        <span className="chip bg-mango/30">{METHOD[o.payment_method] ?? o.payment_method} · {cod && pending ? "Collect cash" : cod && o.payment_status === "PAID" ? "Paid in cash" : label(o.payment_status)}</span>
+        <span className="w-full text-xs font-normal text-ink/70">Placed {when(o.created_at)}{o.completed_at ? ` · Completed ${when(o.completed_at)}` : ""}</span>
       </summary>
       <div className="mt-4 grid gap-5 md:grid-cols-2">
         <div className="space-y-1 text-sm">
-          <p><strong>{o.customer_name}</strong> · {o.customer_phone}{o.customer_email ? ` · ${o.customer_email}` : ""}</p>
+          <p><strong>{o.customer_name}</strong> · <a className="underline" href={`tel:${o.customer_phone}`}>{o.customer_phone}</a>{o.customer_email ? ` · ${o.customer_email}` : ""}</p>
           <p>{o.address}, {o.city}{o.landmark ? ` (near ${o.landmark})` : ""}</p>
+          <p className="flex flex-wrap items-center gap-2">
+            {o.distance_km != null && <span>{o.distance_km.toFixed(1)} km from shop{o.delivery_zone ? ` (${o.delivery_zone})` : ""}</span>}
+            {o.map_url && <a className="inline-flex items-center gap-1 font-bold text-forest underline" href={o.map_url} target="_blank" rel="noopener noreferrer"><FiNavigation aria-hidden />Open in Maps</a>}
+          </p>
           {o.instructions && <p>Note: {o.instructions}</p>}
           <ul className="mt-2 list-disc pl-5">{o.items.map((i, n) => <li key={n}>{i.quantity}× {i.name}{i.variant ? ` (${i.variant})` : ""}{i.addons.length ? ` + ${i.addons.map((a) => a.name).join(", ")}` : ""} — {formatPKR(i.line_total)}</li>)}</ul>
-          <p>Delivery {formatPKR(o.delivery_charge)}{o.delivery_zone ? ` (${o.delivery_zone})` : ""}{o.tax_total ? ` · Tax ${formatPKR(o.tax_total)}` : ""}{o.discount_total ? ` · Discount −${formatPKR(o.discount_total)}` : ""} · <strong>Total {formatPKR(o.total)}</strong></p>
+          <p>Subtotal {formatPKR(o.subtotal)} · Delivery {o.delivery_charge === 0 ? "FREE" : formatPKR(o.delivery_charge)}{o.tax_total ? ` · Tax ${formatPKR(o.tax_total)}` : ""}{o.discount_total ? ` · Discount −${formatPKR(o.discount_total)}` : ""} · <strong>Total {formatPKR(o.total)}</strong></p>
           {o.transaction_ref && <p>Transaction ref: <strong className="font-mono">{o.transaction_ref}</strong></p>}
           {o.has_receipt && (
-            <button className="btn-secondary min-h-[40px] gap-2 px-4 print:hidden" onClick={async () => {
-              const r = await fetch(`${API}/api/admin/orders/${o.order_number}/receipt`, { headers: authHeader() });
-              if (r.ok) window.open(URL.createObjectURL(await r.blob()), "_blank"); else alert("Could not open the receipt");
-            }}><FiFileText aria-hidden />View receipt</button>
+            <button className="btn-secondary min-h-[40px] gap-2 px-4" onClick={() => openReceipt(o.order_number)}><FiFileText aria-hidden />View receipt</button>
           )}
         </div>
-        <div className="space-y-3 print:hidden">
-          <Select label="Order status" value={o.status} onChange={(v) => setStatus({ n: o.order_number, status: v })} options={opts(STATUSES)} />
-          <Select label="Payment status" value={o.payment_status} onChange={(v) => setPayment({ n: o.order_number, status: v, note })} options={opts(PAY)} />
-          <input className={input} placeholder="Payment note" aria-label="Payment note" value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => note !== (o.admin_note ?? "") && setPayment({ n: o.order_number, status: o.payment_status, note })} />
-          <button className="btn-secondary min-h-[44px] gap-2 px-4" onClick={() => window.print()} disabled={isLoading}><FiPrinter aria-hidden />Print</button>
+        <div className="space-y-3">
+          {pending && cod && <p className="rounded-2xl bg-mango/25 p-3 text-sm"><strong>Collect {formatPKR(o.total)} in cash.</strong> Once the payment has come in, mark the order as completed.</p>}
+          {!cod && pending && o.payment_status !== "PAID" && (
+            <div className="space-y-2 rounded-2xl bg-mango/25 p-3 text-sm">
+              <p><strong>Easypaisa payment: {label(o.payment_status)}.</strong> Check the amount and transaction ID in your Easypaisa account, then confirm it. The order can be completed after that.</p>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn-primary min-h-[40px] px-4" disabled={payBusy} onClick={() => pay("PAID")}>Payment received</button>
+                <button className="btn-secondary min-h-[40px] px-4" disabled={payBusy || o.payment_status === "FAILED"} onClick={() => pay("FAILED")}>Could not verify</button>
+              </div>
+            </div>
+          )}
+          {pending && (
+            <input className={input} placeholder="Note (optional)" aria-label="Payment note" value={note} onChange={(e) => setNote(e.target.value)}
+              onBlur={() => note !== (o.admin_note ?? "") && pay(o.payment_status)} />
+          )}
+          {!pending && o.admin_note && <p className="text-sm">Note: {o.admin_note}</p>}
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-secondary min-h-[44px] gap-2 px-4" onClick={() => printSlip(o.order_number)}><FiPrinter aria-hidden />Print slip</button>
+            {pending && <button className="btn-primary min-h-[44px] gap-2 px-4 disabled:opacity-50" disabled={!canComplete || changing} onClick={() => move("COMPLETED")}><FiCheckCircle aria-hidden />{changing ? "Saving…" : "Mark completed"}</button>}
+            {pending && <button className="inline-flex min-h-[44px] items-center rounded-pill px-4 font-bold text-strawberry hover:bg-strawberry/10" disabled={changing} onClick={() => move("CANCELLED")}>Cancel order</button>}
+          </div>
+          {err && <p role="alert" className="text-sm text-strawberry">{err}</p>}
         </div>
       </div>
     </details>
@@ -189,7 +309,7 @@ function Products() {
           <label className="flex items-center gap-2 text-sm"><input className="h-5 w-5 accent-forest" type="checkbox" checked={p.is_featured} onChange={(e) => patch({ id: p.id, is_featured: e.target.checked })} />Featured</label>
           <label className="btn-secondary min-h-[40px] cursor-pointer gap-2 px-4 text-sm"><FiImage aria-hidden />Photo
             <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(e) => e.target.files?.[0] && uploadImage(p.id, e.target.files[0])} /></label>
-          <button className="grid h-10 w-10 place-items-center rounded-full text-strawberry hover:bg-strawberry/10" aria-label={`Delete ${p.name}`} onClick={() => confirm(`Delete ${p.name}? Past orders keep their details.`) && del(p.id)}><FiTrash2 /></button>
+          <button className="grid h-10 w-10 place-items-center rounded-full text-strawberry hover:bg-strawberry/10" aria-label={`Delete ${p.name}`} onClick={async () => { if (await confirmToast(`Delete ${p.name}? Past orders keep their details.`, { confirmLabel: "Delete", cancelLabel: "Keep it", danger: true })) del(p.id); }}><FiTrash2 /></button>
           <div className="w-full"><OptionsEditor id={p.id} /></div>
         </div>
       ))}
@@ -199,11 +319,9 @@ function Products() {
 
 const FIELDS: [string, string, "text" | "number" | "bool"][] = [
   ["business_name", "Business name", "text"], ["phone", "Phone", "text"], ["announcement", "Announcement bar", "text"],
-  ["delivery_charge", "Delivery charge (PKR)", "number"], ["min_order_value", "Minimum order (PKR)", "number"], ["tax_percent", "Tax / GST (%) added to every order", "number"],
+  ["min_order_value", "Minimum order (PKR)", "number"], ["tax_percent", "Tax / GST (%) added to every order", "number"],
   ["cod_enabled", "Cash on Delivery enabled", "bool"],
   ["easypaisa_enabled", "Easypaisa enabled", "bool"], ["easypaisa_name", "Easypaisa account name", "text"], ["easypaisa_number", "Easypaisa number", "text"],
-  ["bank_enabled", "Bank transfer enabled", "bool"], ["bank_name", "Bank name", "text"], ["bank_account_title", "Account title", "text"],
-  ["bank_account_number", "Account number", "text"], ["bank_iban", "IBAN", "text"],
 ];
 
 function SettingsForm() {
@@ -271,37 +389,31 @@ function OptionsEditor({ id }: { id: number }) {
   );
 }
 
-function Zones() {
-  const { data = [] } = useAdminZonesQuery();
-  const [create, { isLoading }] = useAdminCreateZoneMutation(); const [patch] = useAdminPatchZoneMutation(); const [del] = useAdminDeleteZoneMutation();
-  const [n, setN] = useState({ name: "", city: "", charge: "", free: "", min: "" });
-  const orNull = (v: string) => (v.trim() === "" ? null : Number(v));
+function DeliveryTab() {
+  const { data } = useAdminSettingsQuery();
+  const [save, { isLoading, isSuccess, error }] = useAdminSaveSettingsMutation();
+  const [lat, setLat] = useState(""); const [lng, setLng] = useState("");
+  useEffect(() => { if (data) { setLat(data.shop_latitude == null ? "" : String(data.shop_latitude)); setLng(data.shop_longitude == null ? "" : String(data.shop_longitude)); } }, [data]);
+  const num = (v: string) => (v.trim() === "" ? null : Number(v));
+  const bad = (num(lat) === null) !== (num(lng) === null) || [lat, lng].some((v) => v.trim() !== "" && !Number.isFinite(Number(v)));
   return (
-    <div className="space-y-4">
-      <p className="text-sm">Add delivery areas with their own charge. Once at least one active area exists, customers must choose one at checkout. With no areas, the flat delivery charge from Settings applies.</p>
-      <form className="card flex flex-wrap items-end gap-3 p-4" onSubmit={async (e) => {
-        e.preventDefault();
-        try { await create({ name: n.name, city: n.city, charge: Number(n.charge), free_above: orNull(n.free), min_order: orNull(n.min) }).unwrap(); setN({ name: "", city: "", charge: "", free: "", min: "" }); } catch {}
-      }}>
-        <label className="min-w-[140px] flex-1 text-sm">Area name<input required className={input} value={n.name} onChange={(e) => setN({ ...n, name: e.target.value })} /></label>
-        <label className="min-w-[120px] text-sm">City<input required className={input} value={n.city} onChange={(e) => setN({ ...n, city: e.target.value })} /></label>
-        <label className="text-sm">Charge<input required type="number" min={0} className={`${input} w-24`} value={n.charge} onChange={(e) => setN({ ...n, charge: e.target.value })} /></label>
-        <label className="text-sm">Free above<input type="number" min={0} className={`${input} w-28`} value={n.free} onChange={(e) => setN({ ...n, free: e.target.value })} /></label>
-        <label className="text-sm">Min order<input type="number" min={0} className={`${input} w-28`} value={n.min} onChange={(e) => setN({ ...n, min: e.target.value })} /></label>
-        <button className="btn-primary min-h-[44px] gap-2 px-4" disabled={isLoading}><FiPlus aria-hidden />Add area</button>
-      </form>
-      {data.length === 0 && <p className="card p-6">No delivery areas yet. The flat delivery charge is used.</p>}
-      {data.map((z) => (
-        <div key={`${z.id}-${z.name}-${z.city}-${z.charge}-${z.free_above}-${z.min_order}`} className="card flex flex-wrap items-end gap-3 p-4">
-          <label className="min-w-[140px] flex-1 text-sm">Area<input className={input} defaultValue={z.name} onBlur={(e) => e.target.value.trim() && e.target.value !== z.name && patch({ id: z.id, name: e.target.value })} /></label>
-          <label className="min-w-[120px] text-sm">City<input className={input} defaultValue={z.city} onBlur={(e) => e.target.value.trim() && e.target.value !== z.city && patch({ id: z.id, city: e.target.value })} /></label>
-          <label className="text-sm">Charge<input type="number" min={0} className={`${input} w-24`} defaultValue={z.charge} onBlur={(e) => Number(e.target.value) !== z.charge && patch({ id: z.id, charge: Number(e.target.value) })} /></label>
-          <label className="text-sm">Free above<input type="number" min={0} className={`${input} w-28`} defaultValue={z.free_above ?? ""} onBlur={(e) => orNull(e.target.value) !== z.free_above && patch({ id: z.id, free_above: orNull(e.target.value) })} /></label>
-          <label className="text-sm">Min order<input type="number" min={0} className={`${input} w-28`} defaultValue={z.min_order ?? ""} onBlur={(e) => orNull(e.target.value) !== z.min_order && patch({ id: z.id, min_order: orNull(e.target.value) })} /></label>
-          <label className="flex min-h-[44px] items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5 accent-forest" checked={z.is_active} onChange={(e) => patch({ id: z.id, is_active: e.target.checked })} />Active</label>
-          <button aria-label={`Delete ${z.name}`} className="grid h-11 w-11 place-items-center rounded-full text-strawberry hover:bg-strawberry/10" onClick={() => confirm(`Delete ${z.name}?`) && del(z.id)}><FiTrash2 /></button>
+    <div className="space-y-6">
+      <section className="card space-y-3 p-5 sm:p-6">
+        <h2 className="text-xl">Delivery charges</h2>
+        <p className="text-sm">These rates are fixed and apply to every order, wherever it comes from. The charge is worked out on the server from the distance between the shop and the customer&apos;s map pin, so it cannot be changed from the browser.</p>
+        <DeliveryRates />
+      </section>
+      <form className="card space-y-3 p-5 sm:p-6" onSubmit={(e) => { e.preventDefault(); if (!bad) save({ shop_latitude: num(lat), shop_longitude: num(lng) }); }}>
+        <h2 className="text-xl">Shop location</h2>
+        <p className="text-sm">Distances are measured from here. Leave both empty to use the built-in location (Gulshan-e-Iqbal, Karachi). To change it, right-click the shop in Google Maps and copy the two numbers.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm">Latitude<input className={input} inputMode="decimal" value={lat} onChange={(e) => setLat(e.target.value)} placeholder="24.911012" /></label>
+          <label className="block text-sm">Longitude<input className={input} inputMode="decimal" value={lng} onChange={(e) => setLng(e.target.value)} placeholder="67.105612" /></label>
         </div>
-      ))}
+        {bad && <p role="alert" className="text-sm text-strawberry">Enter both numbers, or leave both empty.</p>}
+        <div><button className="btn-primary min-h-[44px] px-5" disabled={isLoading || bad}>{isLoading ? "Saving…" : "Save shop location"}</button>
+          {isSuccess && <span role="status" className="ml-3">Saved</span>}{error && <span role="alert" className="ml-3 text-strawberry">{apiError(error)}</span>}</div>
+      </form>
     </div>
   );
 }

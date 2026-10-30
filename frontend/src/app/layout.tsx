@@ -5,6 +5,7 @@ import { SITE } from "@/config/site";
 import { getPreloadedState } from "@/lib/preload";
 import { StoreProvider } from "@/components/StoreProvider";
 import { SiteChrome } from "@/components/SiteChrome";
+import { Toaster } from "@/components/Toaster";
 import "./globals.css";
 
 const display = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-display", display: "swap" });
@@ -29,6 +30,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <StoreProvider preloadedState={preloadedState}>
           <SiteChrome>{children}</SiteChrome>
         </StoreProvider>
+        <Toaster />
       </body>
     </html>
   );

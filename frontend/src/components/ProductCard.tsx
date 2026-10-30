@@ -9,8 +9,8 @@ import type { Product } from "@/lib/types";
 import { formatPKR } from "@/lib/money";
 import { useAppDispatch } from "@/store/hooks";
 import { addItem } from "@/store/cartSlice";
+import { PUBLIC_API as API } from "@/lib/config";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export function ProductCard({ p }: { p: Product }) {
   const dispatch = useAppDispatch();

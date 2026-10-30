@@ -6,13 +6,12 @@ import { FiMinus, FiPlus, FiShoppingBag, FiTrash2, FiX } from "react-icons/fi";
 import { formatPKR } from "@/lib/money";
 import { useGetQuoteMutation } from "@/store/api";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { removeItem, setOpen, setQty } from "@/store/cartSlice";
+import { removeItem, setCoupon, setOpen, setQty } from "@/store/cartSlice";
 
 export function CartDrawer() {
-  const { items, open } = useAppSelector((s) => s.cart);
+  const { items, open, coupon: applied } = useAppSelector((s) => s.cart);
   const dispatch = useAppDispatch();
   const [promo, setPromo] = useState("");
-  const [applied, setApplied] = useState<string | null>(null);
   const [getQuote, { data: quote, error, isLoading }] = useGetQuoteMutation();
 
   // Totals always come from the server, so they match what checkout charges.
@@ -65,14 +64,14 @@ export function CartDrawer() {
                     ))}
                   </AnimatePresence>
                 </ul>
-                <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); setApplied(promo.trim() || null); }}>
+                <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); dispatch(setCoupon(promo.trim().toUpperCase() || null)); }}>
                   <input aria-label="Promo code" placeholder="Promo code" value={promo} onChange={(e) => setPromo(e.target.value)} className="min-h-[44px] flex-1 rounded-pill border-2 border-vanilla-deep bg-white px-4" />
                   <button className="btn-secondary min-h-[44px] px-4" type="submit">Apply</button>
                 </form>
                 {errMsg && <p role="alert" className="mt-2 text-sm text-strawberry">{errMsg}</p>}
                 <dl className="mt-4 space-y-1 text-sm">
                   <div className="flex justify-between"><dt>Subtotal</dt><dd>{quote ? formatPKR(quote.subtotal) : "…"}</dd></div>
-                  <div className="flex justify-between"><dt>Delivery</dt><dd>{!quote ? "…" : quote.delivery_pending ? "Chosen at checkout" : formatPKR(quote.delivery_charge)}</dd></div>
+                  <div className="flex justify-between"><dt>Delivery</dt><dd>{!quote ? "…" : quote.delivery_pending ? "By distance, at checkout" : formatPKR(quote.delivery_charge)}</dd></div>
                   {!!quote?.tax_total && <div className="flex justify-between"><dt>Tax</dt><dd>{formatPKR(quote.tax_total)}</dd></div>}
                   {!!quote?.discount_total && <div className="flex justify-between"><dt>Discount</dt><dd>−{formatPKR(quote.discount_total)}</dd></div>}
                   <div className="flex justify-between text-lg font-bold text-forest"><dt>Total</dt><dd>{quote ? formatPKR(quote.total) : isLoading ? "…" : ""}</dd></div>

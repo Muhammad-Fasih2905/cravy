@@ -11,7 +11,7 @@ const keyOf = (l: CartLineInput) => `${l.product_id}:${l.variant_id ?? 0}:${[...
 
 const slice = createSlice({
   name: "cart",
-  initialState: { items: [] as CartItem[], open: false },
+  initialState: { items: [] as CartItem[], open: false, coupon: null as string | null },
   reducers: {
     hydrate: (s, a: PayloadAction<CartItem[]>) => { s.items = a.payload; },
     addItem: (s, a: PayloadAction<Omit<CartItem, "key">>) => {
@@ -26,10 +26,11 @@ const slice = createSlice({
       if (i) i.quantity = Math.max(1, Math.min(50, a.payload.quantity));
     },
     removeItem: (s, a: PayloadAction<string>) => { s.items = s.items.filter((i) => i.key !== a.payload); },
-    clear: (s) => { s.items = []; },
+    clear: (s) => { s.items = []; s.coupon = null; },
+    setCoupon: (s, a: PayloadAction<string | null>) => { s.coupon = a.payload; },
     setOpen: (s, a: PayloadAction<boolean>) => { s.open = a.payload; },
   },
 });
 
-export const { hydrate, addItem, setQty, removeItem, clear, setOpen } = slice.actions;
+export const { hydrate, addItem, setQty, removeItem, clear, setOpen, setCoupon } = slice.actions;
 export default slice.reducer;

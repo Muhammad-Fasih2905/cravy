@@ -5,10 +5,11 @@ import { FiChevronDown } from "react-icons/fi";
 
 const FAQS = [
   ["How do I place an order?", "Pick your items from the menu, choose a size and extras, add them to your cart and press Checkout. Fill in your delivery details and confirm."],
-  ["Which payment methods can I use?", "Cash on Delivery, Easypaisa and bank transfer, depending on what is currently enabled. Transfer details appear on your order page after you order."],
-  ["How is my Easypaisa or bank payment confirmed?", "After you transfer, submit your transaction ID on the order page. Our team checks it and marks the payment as paid."],
+  ["Which payment methods can I use?", "Cash on Delivery and Easypaisa, depending on what is currently enabled. With Cash on Delivery you simply pay in cash when your order arrives."],
+  ["How is my Easypaisa payment confirmed?", "After you pay, submit your transaction ID on the order page. Our team checks it and marks the payment as paid."],
+  ["How much is delivery?", "Delivery depends on how far you are from the shop: free up to 1 km, then Rs. 79 for 1-2 km, Rs. 99 for 2-3 km, Rs. 149 for 3-4 km, Rs. 199 for 4-5 km, Rs. 219 for 5-6 km, Rs. 239 for 6-7 km, Rs. 249 for 7-8 km, Rs. 269 for 8-9 km and Rs. 299 for 9-10 km. We deliver within 10 km."],
   ["Is my payment information safe?", "We never ask for card details, PINs or passwords, and we never store them."],
-  ["Can I track my order?", "Yes. Your order page shows each step from confirmation to delivery."],
+  ["Can I track my order?", "Yes. Your order page shows whether your order is received or completed, and updates by itself."],
 ];
 
 export function FAQ() {

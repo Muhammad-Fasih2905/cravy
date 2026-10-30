@@ -1,27 +1,15 @@
 "use client";
-import { useEffect, useState } from "react";
-import Image from "next/image";
+import { useId } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { Fraunces } from "next/font/google";
-import { FiArrowRight, FiArrowUpRight } from "react-icons/fi";
+import { FiArrowRight } from "react-icons/fi";
 import { SITE } from "@/config/site";
 import { formatPKR } from "@/lib/money";
 import type { Product } from "@/lib/types";
 import { useGetMenuQuery } from "@/store/api";
-import shopPhoto1 from "@/assets/cravyshop.webp";
 
 const serif = Fraunces({ subsets: ["latin"], style: ["normal", "italic"], display: "swap" });
-
-/**
- * SHOP PHOTOS: import each file above, then list it here.
- * One photo = static card. Two or more = slow crossfade with progress bars.
- * `position` is the focal point used when the photo is cropped.
- */
-const SHOP_PHOTOS = [
-  { src: shopPhoto1, alt: "Cravy shop interior with a hand-drawn mural wall", position: "50% 40%" },
-  // { src: shopPhoto2, alt: "Cravy storefront at night", position: "50% 38%" },
-];
 
 /** The looping discount banner at the top of the section. Edit the text here. */
 const DEAL = { percent: 25, note: "Order online for delivery" };
@@ -29,14 +17,16 @@ const DEAL = { percent: 25, note: "Order online for delivery" };
 /** Same width and side padding as the navbar, so the edges line up. */
 const CONTAINER = "mx-auto w-full max-w-7xl px-5 sm:px-8 lg:px-6";
 
-const SLIDE_MS = 5500;
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const photo = (p?: Product) =>
-  p?.image_url ? (p.image_url.startsWith("http") ? p.image_url : `${API}${p.image_url}`) : null;
 const priceOf = (p: Product) =>
   p.variants.length ? Math.min(...p.variants.map((v) => v.price)) : p.base_price;
 
 const EASE = [0.22, 1, 0.36, 1] as const;
+
+// Brand palette used inside the illustration (matches the menu cards below the hero).
+const RED = "#E63950";
+const MINT = "#A8E6CF";
+const MANGO = "#F6B820";
+const DEEP = "#0F574C";
 
 /** Endless ticker. Two identical tracks slide left by exactly one track width, so the loop has no jump. */
 function DealMarquee({ reduce }: { reduce: boolean | null }) {
@@ -72,24 +62,228 @@ function DealMarquee({ reduce }: { reduce: boolean | null }) {
   );
 }
 
+// [x, y, rotation, colour]: sprinkles scattered over the three scoops (cone-local coordinates)
+const SPRINKLES: [number, number, number, string][] = [
+  [128, 86, 20, RED], [150, 72, -30, MINT], [182, 92, 40, "#fff"], [196, 100, -15, DEEP],
+  [122, 128, -25, "#fff"], [146, 118, 35, RED], [172, 134, -10, MANGO], [198, 124, 50, DEEP], [160, 146, 15, RED],
+  [112, 178, 30, "#fff"], [138, 168, -20, MANGO], [168, 184, 45, "#fff"], [196, 170, -35, MINT], [210, 190, 10, MANGO], [128, 198, -45, DEEP],
+];
+
+// four-point sparkle
+const STAR = "M0 -9 Q1.5 -1.5 9 0 Q1.5 1.5 0 9 Q-1.5 1.5 -9 0 Q-1.5 -1.5 0 -9Z";
+const SPARKLES: [number, number, number, number][] = [
+  [92, 70, 1, 0], [440, 96, 0.8, 0.7], [58, 218, 0.7, 1.4], [468, 250, 1, 2.1], [250, 18, 0.7, 1.1],
+];
+const BUBBLES: [number, number, number, number][] = [
+  [128, 150, 5, 0], [404, 190, 4, 1.2], [96, 330, 3.5, 2.2], [430, 392, 4.5, 0.6],
+];
+
+/** Original vector illustration: a loaded cone with a chocolate drizzle, a milkshake and a margarita. */
+function IceCreamArt({ reduce }: { reduce: boolean | null }) {
+  const id = useId().replace(/:/g, "");
+  const u = (n: string) => `${n}-${id}`;
+  const float = (dy: number, dur: number, delay = 0) =>
+    reduce
+      ? {}
+      : {
+          animate: { y: [0, -dy, 0] },
+          transition: { duration: dur, repeat: Infinity, ease: "easeInOut" as const, delay },
+        };
+
+  return (
+    <svg viewBox="0 0 520 460" aria-hidden className="h-full w-full overflow-visible">
+      <defs>
+        <radialGradient id={u("red")} cx=".32" cy=".25" r=".95">
+          <stop offset="0" stopColor="#FF8FA0" />
+          <stop offset=".5" stopColor={RED} />
+          <stop offset="1" stopColor="#A91B34" />
+        </radialGradient>
+        <radialGradient id={u("mint")} cx=".32" cy=".25" r=".95">
+          <stop offset="0" stopColor="#E4FFF2" />
+          <stop offset=".5" stopColor={MINT} />
+          <stop offset="1" stopColor="#5DB896" />
+        </radialGradient>
+        <radialGradient id={u("mango")} cx=".32" cy=".25" r=".95">
+          <stop offset="0" stopColor="#FFE9A3" />
+          <stop offset=".5" stopColor={MANGO} />
+          <stop offset="1" stopColor="#CC8A08" />
+        </radialGradient>
+        <linearGradient id={u("choc")} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#8A5530" />
+          <stop offset="1" stopColor="#4A2A15" />
+        </linearGradient>
+        <linearGradient id={u("cone")} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#F0B766" />
+          <stop offset="1" stopColor="#C9803A" />
+        </linearGradient>
+        <linearGradient id={u("shake")} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#FFB3C4" />
+          <stop offset="1" stopColor="#F0577F" />
+        </linearGradient>
+        <linearGradient id={u("lime")} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#E3F98A" />
+          <stop offset="1" stopColor="#9FD43A" />
+        </linearGradient>
+        <clipPath id={u("coneclip")}>
+          <path d="M96 236 L224 236 L160 424 Z" />
+        </clipPath>
+        <clipPath id={u("topdome")}>
+          <path d="M112 100 A48 48 0 0 1 208 100 Z" />
+        </clipPath>
+        <clipPath id={u("shakeclip")}>
+          <path d="M4 62 H76 L68 160 Q66 170 56 170 H24 Q14 170 12 160 Z" />
+        </clipPath>
+        <clipPath id={u("limeclip")}>
+          <path d="M10 14 H90 L50 56 Z" />
+        </clipPath>
+      </defs>
+
+      {/* ground shadow */}
+      <motion.ellipse
+        cx="260" cy="448" rx="64" ry="7" fill="#000"
+        style={{ transformBox: "fill-box", transformOrigin: "center" }}
+        animate={reduce ? { opacity: 0.25 } : { scaleX: [1, 0.8, 1], opacity: [0.3, 0.14, 0.3] }}
+        transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+      />
+
+      {/* sparkles and bubbles */}
+      {SPARKLES.map(([x, y, s, d], i) => (
+        <motion.path
+          key={`s${i}`} d={STAR} fill="#FAF5EE" transform={`translate(${x} ${y}) scale(${s})`}
+          animate={reduce ? { opacity: 0.7 } : { opacity: [0.15, 1, 0.15] }}
+          transition={{ duration: 2.8, repeat: Infinity, delay: d, ease: "easeInOut" }}
+        />
+      ))}
+      {BUBBLES.map(([x, y, r, d], i) => (
+        <motion.circle
+          key={`b${i}`} cx={x} cy={y} r={r} fill="none" stroke="#FAF5EE" strokeWidth="1.2"
+          animate={reduce ? { opacity: 0.35 } : { y: [0, -16, 0], opacity: [0.2, 0.6, 0.2] }}
+          transition={{ duration: 4.5, repeat: Infinity, delay: d, ease: "easeInOut" }}
+        />
+      ))}
+
+      {/* margarita (left) */}
+      <g transform="translate(26 262) scale(.95)">
+        <motion.g {...float(7, 4.4, 0.4)}>
+          <rect x="47" y="56" width="6" height="52" rx="3" fill="#fff" opacity=".55" />
+          <ellipse cx="50" cy="110" rx="28" ry="6" fill="#fff" opacity=".5" />
+          <path d="M0 0 H100 L50 60 Z" fill="#fff" opacity=".16" stroke="#fff" strokeOpacity=".55" strokeWidth="2" strokeLinejoin="round" />
+          <g clipPath={`url(#${u("limeclip")})`}>
+            <rect x="0" y="14" width="100" height="50" fill={`url(#${u("lime")})`} />
+          </g>
+          <rect x="-2" y="-5" width="104" height="8" rx="4" fill="#fff" opacity=".92" />
+          {[8, 22, 36, 52, 66, 80, 92].map((x) => (
+            <circle key={x} cx={x} cy={-1} r="1.2" fill="#BFD7D0" />
+          ))}
+          <g transform="translate(86 6)">
+            <circle r="17" fill="#6DBB2E" stroke="#2E7D32" strokeWidth="2" />
+            <circle r="13" fill="#DDF58A" />
+            {[0, 60, 120].map((a) => (
+              <line key={a} x1="0" y1="-13" x2="0" y2="13" stroke="#6DBB2E" strokeWidth="1.5" transform={`rotate(${a})`} />
+            ))}
+          </g>
+        </motion.g>
+      </g>
+
+      {/* milkshake (right) */}
+      <g transform="translate(392 252) scale(.95)">
+        <motion.g {...float(8, 4.8, 1)}>
+          <line x1="52" y1="70" x2="82" y2="-34" stroke="#fff" strokeWidth="8" strokeLinecap="round" />
+          <line x1="52" y1="70" x2="82" y2="-34" stroke={RED} strokeWidth="8" strokeLinecap="round" strokeDasharray="7 7" />
+          <path d="M0 40 H80 L68 160 Q66 170 56 170 H24 Q14 170 12 160 Z" fill="#fff" opacity=".14" stroke="#fff" strokeOpacity=".55" strokeWidth="2" strokeLinejoin="round" />
+          <g clipPath={`url(#${u("shakeclip")})`}>
+            <rect x="0" y="60" width="80" height="115" fill={`url(#${u("shake")})`} />
+            <rect x="16" y="70" width="8" height="90" rx="4" fill="#fff" opacity=".25" />
+          </g>
+          <ellipse cx="40" cy="42" rx="40" ry="10" fill="#FFF6EC" />
+          <circle cx="26" cy="32" r="15" fill="#FFF6EC" />
+          <circle cx="54" cy="32" r="15" fill="#FFF6EC" />
+          <circle cx="40" cy="20" r="14" fill="#FFF6EC" />
+          <circle cx="40" cy="8" r="8" fill="#C81E3A" />
+          <circle cx="37" cy="5" r="2.4" fill="#fff" opacity=".65" />
+        </motion.g>
+      </g>
+
+      {/* the hero cone */}
+      <g transform="translate(100 0)">
+        <motion.g
+          {...(reduce ? {} : { animate: { y: [0, -10, 0], rotate: [-1.2, 1.2, -1.2] }, transition: { duration: 5, repeat: Infinity, ease: "easeInOut" } })}
+          style={{ transformBox: "fill-box", transformOrigin: "50% 100%" }}
+        >
+          {/* cone */}
+          <path d="M96 236 L224 236 L160 424 Z" fill={`url(#${u("cone")})`} stroke="#A9692B" strokeWidth="2" strokeLinejoin="round" />
+          <g clipPath={`url(#${u("coneclip")})`}>
+            <g stroke="#A9692B" strokeWidth="2" opacity=".7">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <g key={i}>
+                  <line x1={60 + i * 26} y1="236" x2={150 + i * 26} y2="440" />
+                  <line x1={260 - i * 26} y1="236" x2={170 - i * 26} y2="440" />
+                </g>
+              ))}
+            </g>
+            <path d="M160 236 L224 236 L160 424 Z" fill="#000" opacity=".12" />
+          </g>
+          <rect x="88" y="226" width="144" height="18" rx="9" fill="#EDB366" stroke="#A9692B" strokeWidth="2" />
+          <rect x="94" y="229" width="60" height="4" rx="2" fill="#fff" opacity=".35" />
+
+          {/* bottom scoop */}
+          <path
+            d="M95 196 A65 65 0 0 1 225 196 V214 q-13 18 -26 0 q-13 18 -26 0 q-13 18 -26 0 q-13 18 -26 0 q-13 18 -26 0 Z"
+            fill={`url(#${u("red")})`} stroke="rgba(0,0,0,.16)" strokeWidth="1.5"
+          />
+          <ellipse cx="122" cy="160" rx="11" ry="6" fill="#fff" opacity=".4" transform="rotate(-35 122 160)" />
+
+          {/* middle scoop */}
+          <path
+            d="M102 150 A58 58 0 0 1 218 150 V166 q-14.5 18 -29 0 q-14.5 18 -29 0 q-14.5 18 -29 0 q-14.5 18 -29 0 Z"
+            fill={`url(#${u("mint")})`} stroke="rgba(0,0,0,.12)" strokeWidth="1.5"
+          />
+          <ellipse cx="127" cy="116" rx="10" ry="5.5" fill="#fff" opacity=".55" transform="rotate(-35 127 116)" />
+
+          {/* wafer stick, tucked behind the top scoop */}
+          <g transform="translate(192 98) rotate(26)">
+            <rect x="-8" y="-84" width="16" height="84" rx="3" fill="#F1D08F" stroke="#C9A25E" strokeWidth="1.5" />
+            {[-70, -56, -42, -28, -14].map((y) => (
+              <line key={y} x1="-8" y1={y} x2="8" y2={y} stroke="#C9A25E" strokeWidth="1.2" />
+            ))}
+          </g>
+
+          {/* top scoop with chocolate drizzle */}
+          <path
+            d="M112 100 A48 48 0 0 1 208 100 V114 q-12 16 -24 0 q-12 16 -24 0 q-12 16 -24 0 q-12 16 -24 0 Z"
+            fill={`url(#${u("mango")})`} stroke="rgba(0,0,0,.12)" strokeWidth="1.5"
+          />
+          <g clipPath={`url(#${u("topdome")})`}>
+            <path
+              d="M104 40 H216 V80 q-7 22 -14 0 q-6 14 -12 0 q-8 30 -16 0 q-6.5 18 -13 0 q-7.5 26 -15 0 q-7 16 -14 0 q-7 24 -14 0 q-7 12 -14 0 Z"
+              fill={`url(#${u("choc")})`}
+            />
+            <ellipse cx="138" cy="62" rx="10" ry="3.5" fill="#fff" opacity=".28" transform="rotate(-20 138 62)" />
+          </g>
+          <ellipse cx="190" cy="104" rx="7" ry="4" fill="#fff" opacity=".4" transform="rotate(-35 190 104)" />
+
+          {SPRINKLES.map(([x, y, r, c], i) => (
+            <rect key={i} x="-5" y="-1.8" width="10" height="3.6" rx="1.8" fill={c} transform={`translate(${x} ${y}) rotate(${r})`} />
+          ))}
+
+          {/* cherry */}
+          <path d="M160 38 Q166 20 184 14" fill="none" stroke="#6B4423" strokeWidth="3" strokeLinecap="round" />
+          <circle cx="160" cy="46" r="12" fill="#C81E3A" />
+          <circle cx="156" cy="42" r="3.2" fill="#fff" opacity=".65" />
+        </motion.g>
+      </g>
+    </svg>
+  );
+}
+
 export function Hero() {
   const reduce = useReducedMotion();
   const { data } = useGetMenuQuery();
-  const [slide, setSlide] = useState(0);
-
-  useEffect(() => {
-    if (SHOP_PHOTOS.length < 2 || reduce) return;
-    const id = setInterval(() => setSlide((s) => (s + 1) % SHOP_PHOTOS.length), SLIDE_MS);
-    return () => clearInterval(id);
-  }, [reduce]);
 
   const cats = data?.categories ?? [];
   const all = cats.flatMap((c) => c.products);
   const available = all.filter((p) => p.is_available);
-  const pick = [...available].sort((a, b) => Number(b.is_featured) - Number(a.is_featured))[0];
-  const pickSrc = photo(pick);
   const startingPrice = available.length ? Math.min(...available.map(priceOf)) : null;
-  const unopt = API.includes("localhost");
 
   const [first, second] = SITE.headline.split(", ");
   const tagline = cats.slice(0, 3).map((c) => c.name).join("  ·  ") || "Ice Creams  ·  Coldies  ·  Margaritas";
@@ -112,9 +306,13 @@ export function Hero() {
       className="relative isolate overflow-hidden rounded-b-[1.5rem] bg-forest text-cream sm:rounded-b-[2rem]"
       style={{ backgroundImage: "radial-gradient(60% 70% at 20% 30%, rgba(15,87,76,.65), transparent 70%)" }}
     >
+      {/* soft colour glows for depth */}
+      <div aria-hidden className="pointer-events-none absolute -left-24 top-40 -z-10 h-72 w-72 rounded-full bg-mango/10 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute -right-24 bottom-0 -z-10 h-80 w-80 rounded-full bg-[#A8E6CF]/10 blur-3xl" />
+
       <DealMarquee reduce={reduce} />
 
-      <div className={`${CONTAINER} pb-6 pt-8 sm:pb-8 sm:pt-10 lg:pt-12`}>
+      <div className={`${CONTAINER} pb-10 pt-8 sm:pb-12 sm:pt-10 lg:pt-12`}>
         <div className="grid items-center gap-8 sm:gap-10 lg:grid-cols-2 lg:gap-12 xl:gap-16">
           {/* Copy */}
           <div className="min-w-0 sm:max-w-2xl lg:max-w-none">
@@ -173,121 +371,48 @@ export function Hero() {
             )}
           </div>
 
-          {/* Photo card */}
+          {/* Ice cream stage */}
           <motion.div
             initial={reduce ? false : { opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.15, ease: EASE }}
-            className="relative aspect-[4/3] w-full min-w-0 overflow-hidden rounded-2xl bg-forest-700 shadow-[0_28px_56px_-26px_rgba(0,0,0,.6)] ring-1 ring-cream/15 sm:aspect-[16/9] lg:aspect-auto lg:h-[26rem] xl:h-[28rem]"
+            className="relative mx-auto aspect-[5/6] w-full min-w-0 max-w-[30rem] overflow-hidden rounded-2xl bg-forest-700 shadow-[0_28px_56px_-26px_rgba(0,0,0,.6)] ring-1 ring-cream/15 sm:aspect-[16/11] sm:max-w-none lg:aspect-auto lg:h-[28rem] xl:h-[30rem]"
+            style={{
+              backgroundImage:
+                "radial-gradient(55% 55% at 50% 48%, rgba(246,184,32,.28), transparent 70%), radial-gradient(90% 70% at 50% 115%, rgba(0,0,0,.35), transparent 70%)",
+            }}
           >
-            {SHOP_PHOTOS.map((p, i) => (
-              <motion.div
-                key={i}
-                className="absolute inset-0"
-                initial={false}
-                animate={{ opacity: i === slide ? 1 : 0, scale: i === slide ? 1 : 1.06 }}
-                transition={{
-                  opacity: { duration: 1.2, ease: "easeInOut" },
-                  scale: { duration: reduce ? 0 : 6, ease: "easeOut" },
-                }}
-              >
-                <Image
-                  src={p.src}
-                  alt={p.alt}
-                  fill
-                  priority={i === 0}
-                  placeholder="blur"
-                  sizes="(max-width: 1024px) 100vw, 50vw"
-                  className="object-cover"
-                  style={{ objectPosition: p.position }}
-                />
-              </motion.div>
-            ))}
+            {/* concentric rings behind the art */}
+            <div aria-hidden className="absolute left-1/2 top-[48%] aspect-square h-[96%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-cream/10" />
+            <div aria-hidden className="absolute left-1/2 top-[48%] aspect-square h-[70%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-mango/25" />
 
-            {/* top and bottom shading keep the overlay text readable on any photo */}
-            <div aria-hidden className="absolute inset-0 bg-gradient-to-b from-black/45 via-transparent via-35% to-transparent" />
-            <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 via-50% to-transparent" />
-
-            {/* Category tagline, on top of the photo */}
-            <div className="absolute left-3 right-3 top-3 sm:left-5 sm:top-5">
-              <p className="inline-flex max-w-full items-center gap-2.5 rounded-full border border-cream/25 bg-forest/60 px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-[.18em] text-cream backdrop-blur-md sm:text-[11px] sm:tracking-[.22em]">
-                <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-mango" />
-                <span className="truncate">{tagline}</span>
-              </p>
+            {/* the ice cream */}
+            <div className="absolute inset-x-3 bottom-11 top-14 sm:inset-x-6 sm:bottom-14 sm:top-16">
+              <IceCreamArt reduce={reduce} />
             </div>
 
-            <div className="absolute inset-x-0 bottom-0 flex flex-col gap-3 p-3 sm:gap-4 sm:p-5">
-              <div className="flex items-end justify-between gap-4 px-1">
-                <p className={`${serif.className} text-xl italic leading-none text-cream sm:text-2xl`}>Sip. Scoop. Smile.</p>
-                {SHOP_PHOTOS.length > 1 && (
-                  <div className="flex shrink-0 gap-1.5 pb-0.5" role="tablist" aria-label="Shop photos">
-                    {SHOP_PHOTOS.map((_, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        role="tab"
-                        aria-selected={i === slide}
-                        aria-label={`Show photo ${i + 1}`}
-                        onClick={() => setSlide(i)}
-                        className={`h-1 rounded-full transition-all duration-500 ${i === slide ? "w-8 bg-mango" : "w-4 bg-cream/40 hover:bg-cream/70"}`}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
+            {/* discount sticker */}
+            <motion.div
+              aria-hidden
+              className="absolute right-3 top-3 grid h-16 w-16 place-items-center rounded-full bg-mango text-forest shadow-lg ring-4 ring-mango/25 sm:right-5 sm:top-5 sm:h-20 sm:w-20"
+              initial={{ rotate: 10 }}
+              animate={reduce ? undefined : { rotate: [8, 16, 8] }}
+              transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+            >
+              <span className="text-center leading-none">
+                <span className={`${serif.className} block text-xl font-semibold sm:text-2xl`}>{DEAL.percent}%</span>
+                <span className="mt-0.5 block text-[9px] font-bold uppercase tracking-[.2em] sm:text-[10px]">off</span>
+              </span>
+            </motion.div>
 
-              {pick && (
-                <Link
-                  href={`/menu/${pick.slug}`}
-                  className="group flex items-center gap-3 rounded-xl border border-cream/20 bg-forest/70 p-2 pr-3 backdrop-blur-md transition-colors hover:border-mango/60 hover:bg-forest/85 sm:gap-4 sm:p-2.5 sm:pr-4"
-                >
-                  {pickSrc && (
-                    <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg sm:h-12 sm:w-12">
-                      <Image src={pickSrc} alt="" fill sizes="48px" unoptimized={unopt} className="object-cover" />
-                    </span>
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[10px] font-semibold uppercase tracking-[.22em] text-mango">
-                      {pick.is_featured ? "Featured" : "On the menu"}
-                    </span>
-                    <span className={`${serif.className} block truncate text-base leading-tight`}>{pick.name}</span>
-                    <span className="text-xs text-cream/70">from {formatPKR(priceOf(pick))}</span>
-                  </span>
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-cream/25 transition-all duration-300 group-hover:border-mango group-hover:bg-mango group-hover:text-forest">
-                    <FiArrowUpRight aria-hidden />
-                  </span>
-                </Link>
-              )}
-            </div>
+            {/* slogan */}
+            <p className="absolute inset-x-0 bottom-3 flex items-center justify-center gap-3 sm:bottom-5">
+              <span aria-hidden className="h-px w-8 bg-cream/25 sm:w-12" />
+              <span className={`${serif.className} text-lg italic leading-none text-cream/90 sm:text-xl`}>Sip. Scoop. Smile.</span>
+              <span aria-hidden className="h-px w-8 bg-cream/25 sm:w-12" />
+            </p>
           </motion.div>
         </div>
-
-        {/* Category index */}
-        {cats.length > 0 && (
-          <motion.nav {...rise(0.4)} aria-label="Menu categories" className="mt-8 border-t border-cream/15 sm:mt-10">
-            <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 lg:divide-x lg:divide-cream/15">
-              {cats.slice(0, 5).map((c, i) => (
-                <li
-                  key={c.id}
-                  className="min-w-0 max-sm:[&:nth-child(odd):last-child]:col-span-2 lg:px-6 lg:first:pl-0 lg:last:pr-0"
-                >
-                  <Link href="/menu" className="group flex flex-col gap-0.5 py-3 sm:py-4">
-                    <span className="flex items-center justify-between text-[11px] font-semibold tracking-[.2em] text-mango">
-                      {String(i + 1).padStart(2, "0")}
-                      <FiArrowUpRight aria-hidden className="text-base text-transparent transition-colors group-hover:text-mango" />
-                    </span>
-                    <span className={`${serif.className} truncate text-lg leading-tight transition-colors group-hover:text-mango sm:text-xl`}>
-                      {c.name}
-                    </span>
-                    <span className="text-xs text-cream/55">
-                      {c.products.length} {c.products.length === 1 ? "item" : "items"}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </motion.nav>
-        )}
       </div>
     </section>
   );

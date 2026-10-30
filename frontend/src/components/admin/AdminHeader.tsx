@@ -1,18 +1,42 @@
 "use client";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { FiClock, FiCreditCard, FiExternalLink, FiLogOut, FiShoppingBag } from "react-icons/fi";
+import { FiClock, FiCoffee, FiCreditCard, FiExternalLink, FiLogOut, FiMoon, FiShoppingBag, FiSun, FiSunrise, FiSunset } from "react-icons/fi";
 import { useAdminStatsQuery } from "@/store/api";
 import { Logo } from "../brand/Logo";
+import { AdminLogo } from "../brand/AdminLogo";
 
 type TabDef = { id: string; name: string; icon: React.ElementType };
 
+/** The shop runs on Pakistan time, so the greeting follows it whatever device the admin uses. */
+const TZ = "Asia/Karachi";
+
+/** Current time, refreshed every 30 seconds so the greeting changes by itself (no page refresh needed). */
+function useNow() {
+    const [now, setNow] = useState(() => new Date());
+    useEffect(() => {
+        const id = setInterval(() => setNow(new Date()), 30_000);
+        return () => clearInterval(id);
+    }, []);
+    return now;
+}
+
+/** 05-11 morning, 12-16 afternoon, 17-20 evening, 21-23 night, 00-04 late night. */
+function dayPart(now: Date): { greet: string; line: string; Icon: React.ElementType } {
+    const hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hourCycle: "h23", timeZone: TZ }).format(now));
+    if (hour >= 5 && hour < 12) return { greet: "Good morning", line: "Here is what is happening at Cravy today.", Icon: FiSunrise };
+    if (hour >= 12 && hour < 17) return { greet: "Good afternoon", line: "Here is how the day is going at Cravy.", Icon: FiSun };
+    if (hour >= 17 && hour < 21) return { greet: "Good evening", line: "Here is how today is wrapping up at Cravy.", Icon: FiSunset };
+    if (hour >= 21) return { greet: "Good night", line: "Here is where things stand at Cravy tonight.", Icon: FiMoon };
+    return { greet: "Working late", line: "Burning the midnight oil? Here is where things stand.", Icon: FiCoffee };
+}
+
 export function AdminHeader({ tab, onTab, tabs, onLogout }: { tab: string; onTab: (id: string) => void; tabs: TabDef[]; onLogout: () => void }) {
     const { data: s } = useAdminStatsQuery();
-    const now = new Date();
-    const hour = now.getHours();
-    const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-    const today = now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+    const now = useNow();
+    const { greet, line, Icon: PeriodIcon } = dayPart(now);
+    const today = now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: TZ });
     const chips = [
         { label: "Today's orders", value: s?.today_orders, icon: FiShoppingBag, hot: false },
         { label: "Pending orders", value: s?.pending_orders, icon: FiClock, hot: (s?.pending_orders ?? 0) > 0 },
@@ -27,7 +51,7 @@ export function AdminHeader({ tab, onTab, tabs, onLogout }: { tab: string; onTab
             <div className="mx-auto max-w-6xl px-5">
                 <div className="flex items-center justify-between gap-3 py-4">
                     <div className="flex items-center gap-3">
-                        <Link href="/admin" aria-label="Cravy admin"><Logo tone="cream" priority className="h-9 sm:h-11" /></Link>
+                        <Link href="/admin" aria-label="Cravy admin"><AdminLogo priority className="h-12" /></Link>
                         <span className="hidden rounded-pill bg-cream/10 px-3 py-1 text-xs font-bold uppercase tracking-[.18em] ring-1 ring-cream/20 sm:inline">Admin</span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -40,9 +64,9 @@ export function AdminHeader({ tab, onTab, tabs, onLogout }: { tab: string; onTab
 
                 <div className="flex flex-col gap-6 pb-7 pt-3 sm:pt-6 lg:flex-row lg:items-end lg:justify-between">
                     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-                        <p className="text-xs font-bold uppercase tracking-[.2em] text-mango">{today}</p>
-                        <h1 className="mt-1 font-display text-4xl font-extrabold leading-tight sm:text-5xl" style={{ color: "inherit" }}>{greet}</h1>
-                        <p className="mt-1 text-cream/75">Here is what is happening at Cravy today.</p>
+                        <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.2em] text-mango"><PeriodIcon aria-hidden className="text-base" />{today}</p>
+                        <h1 key={greet} className="mt-1 font-display text-4xl font-extrabold leading-tight sm:text-5xl" style={{ color: "inherit" }}>{greet}</h1>
+                        <p className="mt-1 text-cream/75">{line}</p>
                     </motion.div>
                     <ul className="grid grid-cols-3 gap-2 sm:gap-3 lg:min-w-[27rem]">
                         {chips.map(({ label, value, icon: Icon, hot }, i) => (

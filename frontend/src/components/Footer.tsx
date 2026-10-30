@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useId, useRef } from "react";
 import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
-import { FiArrowUpRight, FiCreditCard, FiPhone, FiShield, FiSmartphone, FiTruck } from "react-icons/fi";
+import { FiArrowUpRight, FiPhone, FiShield, FiSmartphone, FiTruck } from "react-icons/fi";
 import Image from "next/image";
 import logo from "@/assets/CravyLogoNavbar.webp";
 import { Reveal } from "@/components/Reveal";
@@ -49,7 +49,6 @@ export function Footer() {
   const pay = [
     settings?.cod_enabled && { icon: FiTruck, label: "Cash on delivery" },
     settings?.easypaisa_enabled && { icon: FiSmartphone, label: "Easypaisa" },
-    settings?.bank_enabled && { icon: FiCreditCard, label: "Bank transfer" },
   ].filter(Boolean) as { icon: typeof FiTruck; label: string }[];
   const explore: [string, string][] = [["Menu", "/menu"], ["Featured treats", "/#featured"], ["Reviews", "/#reviews"], ["FAQ", "/#faq"]];
 

@@ -3,8 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Product } from "@/lib/types";
 import { ProductCard } from "@/components/ProductCard";
+import { SERVER_API as API } from "@/lib/config";
 
-const API = process.env.API_URL ?? "http://localhost:8000";
 const site = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
 async function load(slug: string): Promise<Product | null> {
