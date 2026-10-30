@@ -1,9 +1,10 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useGetMenuQuery } from "@/store/api";
 import { FiSearch } from "react-icons/fi";
 import { ProductCard } from "./ProductCard";
 import { Select } from "./Select";
+import { startingPrice } from "@/lib/pricing";
 
 export function MenuBrowser({ onlyFeatured = false }: { onlyFeatured?: boolean }) {
   const { data, isError, refetch } = useGetMenuQuery();
@@ -11,14 +12,20 @@ export function MenuBrowser({ onlyFeatured = false }: { onlyFeatured?: boolean }
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<"menu" | "low" | "high">("menu");
 
+  // /menu?cat=ice-cream opens that category (used by the "Pick your craving" cards on the home page).
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get("cat");
+    if (c) setCat(c);
+  }, []);
+
   const products = useMemo(() => {
     const list = (data?.categories ?? [])
       .filter((c) => cat === "all" || c.slug === cat)
       .flatMap((c) => c.products)
       .filter((p) => (onlyFeatured ? p.is_featured : true))
       .filter((p) => p.name.toLowerCase().includes(q.trim().toLowerCase()));
-    if (sort === "low") return [...list].sort((a, b) => a.base_price - b.base_price);
-    if (sort === "high") return [...list].sort((a, b) => b.base_price - a.base_price);
+    if (sort === "low") return [...list].sort((a, b) => startingPrice(a).final - startingPrice(b).final);
+    if (sort === "high") return [...list].sort((a, b) => startingPrice(b).final - startingPrice(a).final);
     return list;
   }, [data, cat, q, sort, onlyFeatured]);
 

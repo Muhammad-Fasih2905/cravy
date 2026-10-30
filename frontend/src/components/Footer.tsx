@@ -106,7 +106,7 @@ export function Footer() {
             )}
           </Reveal>
 
-          <Reveal delay={0.18} className="sm:col-span-2 lg:col-span-4">
+          {/* <Reveal delay={0.18} className="sm:col-span-2 lg:col-span-4">
             <Heading>Order &amp; pay</Heading>
             {pay.length > 0 && (
               <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
@@ -119,7 +119,7 @@ export function Footer() {
             )}
             {settings?.phone && <a href={`tel:${settings.phone}`} className="group mt-4 inline-flex items-center gap-3 text-lg font-bold"><span className="grid h-10 w-10 place-items-center rounded-full bg-cream text-forest transition group-hover:rotate-12"><FiPhone aria-hidden /></span><span className="transition group-hover:text-mango">{settings.phone}</span></a>}
             <p className="mt-5 flex items-start gap-2 text-sm text-cream/60"><FiShield aria-hidden className="mt-0.5 shrink-0 text-mint" />We never ask for card details, PINs or passwords.</p>
-          </Reveal>
+          </Reveal> */}
         </div>
       </div>
 

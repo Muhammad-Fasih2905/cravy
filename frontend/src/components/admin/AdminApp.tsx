@@ -1,21 +1,17 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FiBox, FiCheckCircle, FiFileText, FiGrid, FiImage, FiList, FiMapPin, FiNavigation, FiPlus, FiPrinter, FiSettings, FiSliders, FiTrash2, FiX } from "react-icons/fi";
+import { FiBox, FiCheckCircle, FiFileText, FiGrid, FiList, FiMapPin, FiNavigation, FiPrinter, FiSettings, FiX } from "react-icons/fi";
 import { formatPKR } from "@/lib/money";
 import {
-  useAdminLoginMutation, useAdminOrdersQuery, useAdminPatchProductMutation, useAdminProductsQuery,
-  useAdminSaveSettingsMutation, useAdminSetPaymentMutation, useAdminSetStatusMutation, useAdminSettingsQuery,
-  useAdminStatsQuery, useAdminCategoriesQuery, useAdminOptionsQuery, useAdminSaveOptionsMutation, type OptionRow,
-  useAdminCreateProductMutation, useAdminDeleteProductMutation, type AdminOrder,
+  useAdminLoginMutation, useAdminOrdersQuery, useAdminSaveSettingsMutation, useAdminSetPaymentMutation,
+  useAdminSetStatusMutation, useAdminSettingsQuery, useAdminStatsQuery, type AdminOrder,
 } from "@/store/api";
-import { api } from "@/store/api";
-import { useAppDispatch } from "@/store/hooks";
 import { Select } from "../Select";
 import { AdminHeader } from "./AdminHeader";
+import { ProductsAdmin } from "./ProductsAdmin";
 import { AdminLogo } from "../brand/AdminLogo";
 import { DeliveryRates } from "../DeliveryRates";
-import { PUBLIC_API } from "@/lib/config";
 import { confirmToast } from "@/lib/notify";
 import { openReceipt, printSlip } from "@/lib/adminFetch";
 import { useOrderStream, type StreamState } from "@/lib/useOrderStream";
@@ -24,8 +20,6 @@ const PAY = ["UNPAID", "AWAITING_PAYMENT", "PENDING_VERIFICATION", "PAID", "FAIL
 const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 const METHOD: Record<string, string> = { COD: "Cash on Delivery", EASYPAISA: "Easypaisa" };
 const opts = (a: string[], all?: string) => [...(all ? [{ value: "", label: all }] : []), ...a.map((v) => ({ value: v, label: label(v) }))];
-const API = PUBLIC_API;
-const authHeader = () => ({ authorization: `Bearer ${sessionStorage.getItem("cravy-admin")}` });
 const input = "min-h-[44px] w-full rounded-2xl border-2 border-vanilla-deep bg-white px-4";
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-PK", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "");
 /** The message the server sent back (for example "This order is already completed"), or a generic one. */
@@ -97,7 +91,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
         <div className="mb-4 flex justify-end print:hidden"><LivePill state={stream} /></div>
         <AnimatePresence mode="wait">
           <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-            {tab === "overview" && <Overview />}{tab === "orders" && <Orders filter={orderTab} setFilter={setOrderTab} />}{tab === "products" && <Products />}{tab === "delivery" && <DeliveryTab />}{tab === "settings" && <SettingsForm />}
+            {tab === "overview" && <Overview />}{tab === "orders" && <Orders filter={orderTab} setFilter={setOrderTab} />}{tab === "products" && <ProductsAdmin />}{tab === "delivery" && <DeliveryTab />}{tab === "settings" && <SettingsForm />}
           </motion.div>
         </AnimatePresence>
       </main>
@@ -270,53 +264,6 @@ function OrderCard({ o }: { o: AdminOrder }) {
   );
 }
 
-function Products() {
-  const dispatch = useAppDispatch();
-  const { data = [] } = useAdminProductsQuery(); const [patch] = useAdminPatchProductMutation();
-  const { data: cats = [] } = useAdminCategoriesQuery(); const [create, { isLoading: creating }] = useAdminCreateProductMutation();
-  const [del] = useAdminDeleteProductMutation();
-  const [nf, setNf] = useState({ name: "", price: "", cat: "" });
-  const [err, setErr] = useState("");
-
-  async function uploadImage(id: number, file: File) {
-    setErr("");
-    const fd = new FormData(); fd.append("file", file);
-    const r = await fetch(`${API}/api/admin/products/${id}/image`, { method: "POST", headers: authHeader(), body: fd });
-    if (!r.ok) setErr((await r.json().catch(() => ({}))).detail ?? "Upload failed");
-    dispatch(api.util.invalidateTags(["AdminProducts", "Menu"]));
-  }
-
-  return (
-    <div className="space-y-4">
-      <form className="card flex flex-wrap items-end gap-3 p-4" onSubmit={async (e) => {
-        e.preventDefault(); setErr("");
-        try { await create({ name: nf.name, category_id: Number(nf.cat || cats[0]?.id), base_price: Number(nf.price) }).unwrap(); setNf({ name: "", price: "", cat: "" }); }
-        catch { setErr("Could not add the product"); }
-      }}>
-        <label className="min-w-[180px] flex-1 text-sm">New product name<input required className={input} value={nf.name} onChange={(e) => setNf({ ...nf, name: e.target.value })} /></label>
-        <label className="text-sm">Price (PKR)<input required type="number" min={0} className={`${input} w-28`} value={nf.price} onChange={(e) => setNf({ ...nf, price: e.target.value })} /></label>
-        <Select label="Category" value={nf.cat || String(cats[0]?.id ?? "")} onChange={(v) => setNf({ ...nf, cat: v })} options={cats.map((c) => ({ value: String(c.id), label: c.name }))} />
-        <button className="btn-primary min-h-[44px] gap-2 px-4" disabled={creating}><FiPlus aria-hidden />Add</button>
-      </form>
-      {err && <p role="alert" className="text-strawberry">{err}</p>}
-      <p className="text-sm">Edit prices and availability, upload photos (JPG, PNG or WEBP, up to 3 MB). Demo items are marked until you replace them.</p>
-      {data.map((p) => (
-        <div key={p.id} className="card flex flex-wrap items-center gap-3 p-4">
-          <div className="min-w-[180px] flex-1"><p className="font-bold">{p.name}</p><p className="text-sm">{p.category}{p.is_demo ? " · DEMO" : ""}{p.image_url ? " · has photo" : ""}</p></div>
-          <label className="text-sm">Price (PKR)<input key={p.base_price} className={`${input} w-28`} type="number" min={0} defaultValue={p.base_price} onBlur={(e) => Number(e.target.value) !== p.base_price && patch({ id: p.id, base_price: Number(e.target.value) })} /></label>
-          <label className="flex items-center gap-2 text-sm"><input className="h-5 w-5 accent-forest" type="checkbox" checked={p.is_available} onChange={(e) => patch({ id: p.id, is_available: e.target.checked })} />Available</label>
-          <label className="flex items-center gap-2 text-sm"><input className="h-5 w-5 accent-forest" type="checkbox" checked={p.is_bestseller} onChange={(e) => patch({ id: p.id, is_bestseller: e.target.checked })} />Bestseller</label>
-          <label className="flex items-center gap-2 text-sm"><input className="h-5 w-5 accent-forest" type="checkbox" checked={p.is_featured} onChange={(e) => patch({ id: p.id, is_featured: e.target.checked })} />Featured</label>
-          <label className="btn-secondary min-h-[40px] cursor-pointer gap-2 px-4 text-sm"><FiImage aria-hidden />Photo
-            <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(e) => e.target.files?.[0] && uploadImage(p.id, e.target.files[0])} /></label>
-          <button className="grid h-10 w-10 place-items-center rounded-full text-strawberry hover:bg-strawberry/10" aria-label={`Delete ${p.name}`} onClick={async () => { if (await confirmToast(`Delete ${p.name}? Past orders keep their details.`, { confirmLabel: "Delete", cancelLabel: "Keep it", danger: true })) del(p.id); }}><FiTrash2 /></button>
-          <div className="w-full"><OptionsEditor id={p.id} /></div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 const FIELDS: [string, string, "text" | "number" | "bool"][] = [
   ["business_name", "Business name", "text"], ["phone", "Phone", "text"], ["announcement", "Announcement bar", "text"],
   ["min_order_value", "Minimum order (PKR)", "number"], ["tax_percent", "Tax / GST (%) added to every order", "number"],
@@ -344,50 +291,6 @@ function SettingsForm() {
   );
 }
 
-
-function OptionList({ title, rows, set }: { title: string; rows: OptionRow[]; set: (r: OptionRow[]) => void }) {
-  const upd = (i: number, patch: Partial<OptionRow>) => set(rows.map((r, n) => (n === i ? { ...r, ...patch } : r)));
-  return (
-    <fieldset className="space-y-2">
-      <legend className="font-bold text-forest">{title}</legend>
-      {rows.length === 0 && <p className="text-sm">None yet.</p>}
-      {rows.map((r, i) => (
-        <div key={r.id ?? `new-${i}`} className="flex flex-wrap items-center gap-2">
-          <input aria-label={`${title} name`} className={`${input} min-w-[140px] flex-1`} value={r.name} onChange={(e) => upd(i, { name: e.target.value })} />
-          <input aria-label="Price" type="number" min={0} className={`${input} w-28`} value={r.price} onChange={(e) => upd(i, { price: Number(e.target.value) })} />
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5 accent-forest" checked={r.is_available} onChange={(e) => upd(i, { is_available: e.target.checked })} />On</label>
-          <button type="button" aria-label="Remove" className="grid h-10 w-10 place-items-center rounded-full text-strawberry hover:bg-strawberry/10" onClick={() => set(rows.filter((_, n) => n !== i))}><FiTrash2 /></button>
-        </div>
-      ))}
-      <button type="button" className="btn-secondary min-h-[40px] gap-2 px-4 text-sm" onClick={() => set([...rows, { name: "", price: 0, is_available: true }])}><FiPlus aria-hidden />Add</button>
-    </fieldset>
-  );
-}
-
-function OptionsEditor({ id }: { id: number }) {
-  const [open, setOpen] = useState(false);
-  const { data } = useAdminOptionsQuery(id, { skip: !open });
-  const [save, { isLoading, isSuccess, error }] = useAdminSaveOptionsMutation();
-  const [v, setV] = useState<OptionRow[]>([]); const [a, setA] = useState<OptionRow[]>([]);
-  useEffect(() => { if (data) { setV(data.variants); setA(data.addons); } }, [data]);
-  const msg = error && "data" in error ? ((error.data as { detail?: unknown })?.detail ? "Please check names and prices" : "Could not save") : error ? "Could not save" : "";
-  return (
-    <div>
-      <button type="button" className="chip min-h-[40px] gap-2 px-4" aria-expanded={open} onClick={() => setOpen(!open)}><FiSliders aria-hidden />Sizes &amp; toppings</button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.form initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="mt-3 grid gap-6 overflow-hidden md:grid-cols-2"
-            onSubmit={(e) => { e.preventDefault(); save({ id, variants: v.filter((r) => r.name.trim()), addons: a.filter((r) => r.name.trim()) }); }}>
-            <OptionList title="Sizes (the price replaces the base price)" rows={v} set={setV} />
-            <OptionList title="Toppings (the price is added)" rows={a} set={setA} />
-            <div className="md:col-span-2"><button className="btn-primary min-h-[44px] px-5" disabled={isLoading}>{isLoading ? "Saving…" : "Save sizes & toppings"}</button>
-              {isSuccess && <span role="status" className="ml-3">Saved</span>}{msg && <span role="alert" className="ml-3 text-strawberry">{msg}</span>}</div>
-          </motion.form>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
 
 function DeliveryTab() {
   const { data } = useAdminSettingsQuery();

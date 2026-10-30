@@ -1,9 +1,12 @@
-export type Variant = { id: number; name: string; price: number; is_available: boolean };
+/** price = regular price. final_price = what the customer pays after the product discount (the server sends both). */
+export type Variant = { id: number; name: string; price: number; is_available: boolean; final_price?: number };
 export type Addon = { id: number; name: string; price: number; is_available: boolean };
 export type Product = {
   id: number; category_id: number; name: string; slug: string; description: string | null;
   image_url: string | null; base_price: number; is_available: boolean; is_bestseller: boolean;
   is_featured: boolean; prep_minutes: number | null; is_demo: boolean; variants: Variant[]; addons: Addon[];
+  /** 0-90, set by the admin. 0 = no discount. */
+  discount_percent?: number; final_base_price?: number;
 };
 export type Category = { id: number; name: string; slug: string; products: Product[] };
 export type Menu = { categories: Category[] };

@@ -1,6 +1,7 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import type { CartLineInput, DeliveryRates, Menu, OrderInput, OrderResult, OrderStatus, PaymentMethodInfo, Product, PublicSettings, Quote } from "@/lib/types";
 import { API_BASE as baseUrl } from "@/lib/config";
+import { announceMenuChange } from "@/lib/menuSync";
 // Browser calls NEXT_PUBLIC_API_URL; the Next.js server (preloading) calls API_URL. Trailing slashes are removed in config.
 
 export type AdminOrder = {
@@ -28,13 +29,24 @@ export type AdminStats = {
 export type AdminProduct = {
   id: number; name: string; slug: string; base_price: number; is_available: boolean; is_bestseller: boolean;
   is_featured: boolean; is_demo: boolean; category: string; image_url: string | null;
+  discount_percent: number; final_base_price: number;
 };
+/** Fields the admin can change on an existing product (PATCH /api/admin/products/{id}). */
+export type ProductPatch = Partial<{
+  name: string; description: string | null; base_price: number; is_available: boolean;
+  is_bestseller: boolean; is_featured: boolean; discount_percent: number;
+}>;
 export type OptionRow = { id?: number; name: string; price: number; is_available: boolean };
 export type ProductOptions = { variants: OptionRow[]; addons: OptionRow[] };
 export type AdminSettings = Record<string, string | number | boolean | null>;
 
-/** Orders, carts and everything admin must always come straight from the server, never from a cache. */
-const LIVE = /\/api\/(admin|orders|cart|payment-methods)/;
+/** Orders, carts, admin and the menu/products/settings must always come straight from the server, never from a cache (that is what makes menu changes show up at once). */
+const LIVE = /\/api\/(admin|orders|cart|payment-methods|menu|products|settings)/;
+
+/** After the admin changes a product, tell the other open tabs of this browser to refresh their menu immediately. */
+const announce = async (_: unknown, { queryFulfilled }: { queryFulfilled: Promise<unknown> }) => {
+  try { await queryFulfilled; announceMenuChange(); } catch { /* the caller shows the error */ }
+};
 
 export const api = createApi({
   reducerPath: "api",
@@ -68,7 +80,7 @@ export const api = createApi({
   endpoints: (b) => ({
     getMenu: b.query<Menu, void>({ query: () => "/api/menu", providesTags: ["Menu"] }),
     getSettings: b.query<PublicSettings, void>({ query: () => "/api/settings", providesTags: ["Settings"] }),
-    getProduct: b.query<Product, string>({ query: (slug) => `/api/products/${slug}` }),
+    getProduct: b.query<Product, string>({ query: (slug) => `/api/products/${slug}`, providesTags: ["Menu"] }),
     getDeliveryRates: b.query<DeliveryRates, void>({ query: () => "/api/delivery-rates" }),
     getPaymentMethods: b.query<PaymentMethodInfo[], void>({ query: () => "/api/payment-methods", providesTags: ["Settings"] }),
     // Send only ids, quantities and the customer's map pin. The server measures the distance and prices everything.
@@ -107,20 +119,20 @@ export const api = createApi({
       invalidatesTags: ["AdminSettings", "Settings"],
     }),
     adminProducts: b.query<AdminProduct[], void>({ query: () => "/api/admin/products", providesTags: ["AdminProducts"] }),
-    adminPatchProduct: b.mutation<unknown, { id: number } & Partial<Omit<AdminProduct, "id">>>({
+    adminPatchProduct: b.mutation<unknown, { id: number } & ProductPatch>({
       query: ({ id, ...body }) => ({ url: `/api/admin/products/${id}`, method: "PATCH", body }),
-      invalidatesTags: ["AdminProducts", "Menu"],
+      invalidatesTags: ["AdminProducts", "Menu"], onQueryStarted: announce,
     }),
     adminCategories: b.query<{ id: number; name: string }[], void>({ query: () => "/api/admin/categories" }),
-    adminCreateProduct: b.mutation<unknown, { name: string; category_id: number; base_price: number }>({
-      query: (body) => ({ url: "/api/admin/products", method: "POST", body }), invalidatesTags: ["AdminProducts", "Menu"],
+    adminCreateProduct: b.mutation<{ id: number }, { name: string; category_id: number; base_price: number }>({
+      query: (body) => ({ url: "/api/admin/products", method: "POST", body }), invalidatesTags: ["AdminProducts", "Menu"], onQueryStarted: announce,
     }),
     adminDeleteProduct: b.mutation<unknown, number>({
-      query: (id) => ({ url: `/api/admin/products/${id}`, method: "DELETE" }), invalidatesTags: ["AdminProducts", "Menu"],
+      query: (id) => ({ url: `/api/admin/products/${id}`, method: "DELETE" }), invalidatesTags: ["AdminProducts", "Menu"], onQueryStarted: announce,
     }),
     adminOptions: b.query<ProductOptions, number>({ query: (id) => `/api/admin/products/${id}/options`, providesTags: ["Options"] }),
     adminSaveOptions: b.mutation<ProductOptions, { id: number } & ProductOptions>({
-      query: ({ id, ...body }) => ({ url: `/api/admin/products/${id}/options`, method: "PUT", body }), invalidatesTags: ["Options", "Menu"],
+      query: ({ id, ...body }) => ({ url: `/api/admin/products/${id}/options`, method: "PUT", body }), invalidatesTags: ["Options", "Menu"], onQueryStarted: announce,
     }),
   }),
 });
