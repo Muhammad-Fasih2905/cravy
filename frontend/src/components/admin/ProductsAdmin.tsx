@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FiImage, FiPlus, FiSave, FiSliders, FiTrash2 } from "react-icons/fi";
+import { FiChevronDown, FiImage, FiPlus, FiSave, FiSearch, FiSliders, FiTrash2, FiX } from "react-icons/fi";
 import { formatPKR } from "@/lib/money";
 import { applyDiscount } from "@/lib/pricing";
 import {
@@ -136,7 +136,7 @@ function OptionsEditor({ id }: { id: number }) {
 }
 
 /* ------------------------------------------------------------ add a product */
-function NewProduct() {
+function NewProduct({ onClose }: { onClose: () => void }) {
   const dispatch = useAppDispatch();
   const { data: cats = [] } = useAdminCategoriesQuery();
   const [create, { isLoading: creating }] = useAdminCreateProductMutation();
@@ -177,7 +177,10 @@ function NewProduct() {
 
   return (
     <form className="card space-y-5 p-5" onSubmit={submit}>
-      <h2 className="text-xl">Add a new product</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-xl">Add a new product</h2>
+        <button type="button" aria-label="Close the form" className="grid h-10 w-10 place-items-center rounded-full hover:bg-vanilla" onClick={onClose}><FiX /></button>
+      </div>
       <div className="grid gap-4 md:grid-cols-[1fr_auto]">
         <div className="space-y-4">
           <div className="flex flex-wrap items-end gap-3">
@@ -214,7 +217,8 @@ function NewProduct() {
 }
 
 /* ------------------------------------------------------ one existing product */
-function ProductRow({ p, menuDesc, menuLoaded }: { p: AdminProduct; menuDesc: string | undefined; menuLoaded: boolean }) {
+
+function ProductEditor({ p, menuDesc, menuLoaded }: { p: AdminProduct; menuDesc: string | undefined; menuLoaded: boolean }) {
   const dispatch = useAppDispatch();
   const [patch, { isLoading }] = useAdminPatchProductMutation();
   const [del] = useAdminDeleteProductMutation();
@@ -256,7 +260,7 @@ function ProductRow({ p, menuDesc, menuLoaded }: { p: AdminProduct; menuDesc: st
   }
 
   return (
-    <div className="card space-y-4 p-4">
+    <div className="space-y-4 border-t-2 border-vanilla-deep/60 bg-vanilla/30 p-4 sm:p-5">
       <div className="flex flex-wrap items-start gap-4">
         <div className="space-y-2">
           <PhotoPicker file={null} current={p.image_url} onFile={newPhoto} />
@@ -290,21 +294,162 @@ function ProductRow({ p, menuDesc, menuLoaded }: { p: AdminProduct; menuDesc: st
   );
 }
 
+/* ---------------------------------------------------- list: one compact row */
+function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)}
+      className={`relative h-7 w-12 shrink-0 rounded-pill transition-colors ${checked ? "bg-forest" : "bg-vanilla-deep"}`}>
+      <span aria-hidden className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${checked ? "left-6" : "left-1"}`} />
+    </button>
+  );
+}
+
+function PriceTag({ p }: { p: AdminProduct }) {
+  const off = p.discount_percent || 0;
+  return (
+    <span className="flex items-baseline gap-2 whitespace-nowrap">
+      <strong className="text-forest">{formatPKR(off > 0 ? p.final_base_price : p.base_price)}</strong>
+      {off > 0 && <s className="text-xs opacity-60">{formatPKR(p.base_price)}</s>}
+      {off > 0 && <span className="rounded-pill bg-strawberry px-2 py-0.5 text-xs font-bold text-cream">-{off}%</span>}
+    </span>
+  );
+}
+
+function ProductItem({ p, open, onToggle, menuDesc, menuLoaded }: { p: AdminProduct; open: boolean; onToggle: () => void; menuDesc: string | undefined; menuLoaded: boolean }) {
+  const [patch] = useAdminPatchProductMutation();
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (open) ref.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [open]);
+  return (
+    <div ref={ref} className={`card overflow-hidden transition-shadow ${open ? "shadow-lift ring-2 ring-forest/30" : ""}`}>
+      <div className="flex items-center gap-3 p-3 sm:gap-4 sm:p-4">
+        <button type="button" aria-expanded={open} aria-label={`${open ? "Close" : "Edit"} ${p.name}`} onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-3 text-left sm:gap-4">
+          <span className={`grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-vanilla text-forest/40 ${p.is_available ? "" : "opacity-50"}`}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {p.image_url ? <img src={imgSrc(p.image_url)} alt="" loading="lazy" className="h-full w-full object-cover" /> : <FiImage aria-hidden size={22} />}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className={`block truncate font-bold ${p.is_available ? "text-forest" : "text-ink/60"}`}>{p.name}</span>
+            <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+              <span>{p.category}</span>
+              {p.is_demo && <span className="rounded-pill bg-mango/40 px-2 py-0.5 font-bold">DEMO</span>}
+              {p.is_bestseller && <span className="rounded-pill bg-mango/30 px-2 py-0.5 font-semibold">Bestseller</span>}
+              {p.is_featured && <span className="rounded-pill bg-mint/50 px-2 py-0.5 font-semibold">Featured</span>}
+              {!p.image_url && <span className="rounded-pill bg-strawberry/10 px-2 py-0.5 font-semibold text-strawberry">No photo</span>}
+              {!p.is_available && <span className="rounded-pill bg-vanilla-deep px-2 py-0.5 font-semibold">Hidden from ordering</span>}
+            </span>
+            <span className="mt-1 block text-sm sm:hidden"><PriceTag p={p} /></span>
+          </span>
+          <span className="hidden shrink-0 text-right text-sm sm:block"><PriceTag p={p} /></span>
+          <FiChevronDown aria-hidden className={`shrink-0 text-xl transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+        <div className="flex shrink-0 flex-col items-center gap-1 sm:flex-row sm:gap-2">
+          <Switch checked={p.is_available} label={`${p.name} available`} onChange={(v) => patch({ id: p.id, is_available: v })} />
+          <span className="text-[11px] font-semibold leading-none sm:text-xs">{p.is_available ? "In stock" : "Off"}</span>
+        </div>
+      </div>
+      {open && <ProductEditor p={p} menuLoaded={menuLoaded} menuDesc={menuDesc} />}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ tab */
+type Status = "all" | "available" | "unavailable" | "discount" | "featured" | "bestseller" | "nophoto";
+type Sort = "menu" | "name" | "low" | "high";
+const STATUS: [Status, string, (p: AdminProduct) => boolean][] = [
+  ["all", "All", () => true],
+  ["available", "In stock", (p) => p.is_available],
+  ["unavailable", "Out of stock", (p) => !p.is_available],
+  ["discount", "On discount", (p) => (p.discount_percent || 0) > 0],
+  ["featured", "Featured", (p) => p.is_featured],
+  ["bestseller", "Bestsellers", (p) => p.is_bestseller],
+  ["nophoto", "No photo", (p) => !p.image_url],
+];
+const PAGE = 20;
+
 export function ProductsAdmin() {
-  const { data = [] } = useAdminProductsQuery();
+  const { data = [], isLoading, isError, refetch } = useAdminProductsQuery();
   const { data: menu } = useGetMenuQuery();
+  const [q, setQ] = useState(""); const [cat, setCat] = useState("all");
+  const [status, setStatus] = useState<Status>("all"); const [sort, setSort] = useState<Sort>("menu");
+  const [limit, setLimit] = useState(PAGE); const [openId, setOpenId] = useState<number | null>(null); const [adding, setAdding] = useState(false);
+
   // The admin list does not carry descriptions, so they come from the public menu (matched by id).
   const descById = useMemo(() => {
     const m = new Map<number, string>();
     menu?.categories.forEach((c) => c.products.forEach((p) => m.set(p.id, p.description ?? "")));
     return m;
   }, [menu]);
+  const cats = useMemo(() => Array.from(new Set(data.map((p) => p.category))), [data]);
+  const counts = useMemo(() => Object.fromEntries(STATUS.map(([id, , f]) => [id, data.filter(f).length])) as Record<Status, number>, [data]);
+
+  const list = useMemo(() => {
+    const s = q.trim().toLowerCase(); const check = STATUS.find(([id]) => id === status)![2];
+    const r = data.filter((p) => (cat === "all" || p.category === cat) && check(p)
+      && (!s || p.name.toLowerCase().includes(s) || p.category.toLowerCase().includes(s) || (descById.get(p.id) ?? "").toLowerCase().includes(s)));
+    if (sort === "name") return [...r].sort((a, b) => a.name.localeCompare(b.name));
+    if (sort === "low") return [...r].sort((a, b) => a.final_base_price - b.final_base_price);
+    if (sort === "high") return [...r].sort((a, b) => b.final_base_price - a.final_base_price);
+    return r;
+  }, [data, descById, q, cat, status, sort]);
+  useEffect(() => setLimit(PAGE), [q, cat, status, sort]);
+
+  const filtered = q.trim() !== "" || cat !== "all" || status !== "all";
+  const clear = () => { setQ(""); setCat("all"); setStatus("all"); };
+  const shown = list.slice(0, limit);
+
   return (
     <div className="space-y-4">
-      <NewProduct />
-      <p className="text-sm">Edit name, description, price and discount, then press <strong>Save changes</strong>. Availability, bestseller and featured save immediately. Changes reach customers within about a minute. Demo items are marked until you replace them.</p>
-      {data.map((p) => <ProductRow key={p.id} p={p} menuLoaded={!!menu} menuDesc={descById.get(p.id)} />)}
+      <section aria-label="Find products" className="card space-y-3 p-3 sm:p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="relative flex-1">
+            <FiSearch aria-hidden className="absolute left-4 top-1/2 -translate-y-1/2 text-forest" />
+            <input type="search" aria-label="Search products" placeholder="Search by name, category or description" value={q} onChange={(e) => setQ(e.target.value)}
+              className="min-h-[48px] w-full rounded-pill border-2 border-vanilla-deep bg-white pl-11 pr-11" />
+            {q && <button type="button" aria-label="Clear search" onClick={() => setQ("")} className="absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full hover:bg-vanilla"><FiX /></button>}
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:flex">
+            <select aria-label="Category" className={`${input} sm:w-48`} value={cat} onChange={(e) => setCat(e.target.value)}>
+              <option value="all">All categories</option>{cats.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select aria-label="Sort by" className={`${input} sm:w-48`} value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+              <option value="menu">Menu order</option><option value="name">Name A to Z</option><option value="low">Price: low to high</option><option value="high">Price: high to low</option>
+            </select>
+          </div>
+          <button type="button" aria-expanded={adding} className="btn-primary min-h-[48px] gap-2 px-5" onClick={() => setAdding((v) => !v)}>
+            {adding ? <FiX aria-hidden /> : <FiPlus aria-hidden />}{adding ? "Close form" : "Add product"}
+          </button>
+        </div>
+        <div role="tablist" aria-label="Product status" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+          {STATUS.map(([id, name]) => (
+            <button key={id} role="tab" aria-selected={status === id} onClick={() => setStatus(id)}
+              className={`inline-flex min-h-[40px] shrink-0 items-center gap-2 rounded-pill px-4 text-sm font-bold transition-colors ${status === id ? "bg-forest text-cream" : "bg-white text-forest ring-1 ring-vanilla-deep hover:bg-vanilla"}`}>
+              {name}<span className={`rounded-pill px-2 text-xs ${status === id ? "bg-cream/20" : "bg-vanilla"}`}>{counts[id]}</span>
+            </button>
+          ))}
+        </div>
+        <p className="flex flex-wrap items-center gap-x-3 text-sm" role="status">
+          <span>Showing <strong>{shown.length}</strong> of <strong>{list.length}</strong>{filtered ? ` matching (${data.length} in total)` : " products"}. Tap a product to edit it. The switch turns ordering on or off straight away.</span>
+          {filtered && <button type="button" className="font-bold text-forest underline" onClick={clear}>Clear filters</button>}
+        </p>
+      </section>
+
+      {adding && <NewProduct onClose={() => setAdding(false)} />}
+
+      {isLoading && <div className="space-y-3">{[0, 1, 2, 3].map((i) => <div key={i} className="h-20 animate-pulse rounded-card bg-vanilla" />)}</div>}
+      {isError && <div role="alert" className="card p-5">Could not load products. Your session may have expired. <button className="font-bold underline" onClick={() => refetch()}>Try again</button></div>}
+      {!isLoading && !isError && data.length === 0 && <p className="card p-6">No products yet. Press <strong>Add product</strong> to create your first one.</p>}
+      {!isLoading && !isError && data.length > 0 && list.length === 0 && (
+        <div className="card space-y-3 p-6"><p>No products match your search.</p><button type="button" className="btn-secondary min-h-[44px] px-5" onClick={clear}>Clear filters</button></div>
+      )}
+
+      <div className="space-y-3">
+        {shown.map((p) => (
+          <ProductItem key={p.id} p={p} open={openId === p.id} onToggle={() => setOpenId(openId === p.id ? null : p.id)} menuLoaded={!!menu} menuDesc={descById.get(p.id)} />
+        ))}
+      </div>
+      {list.length > limit && (
+        <div className="text-center"><button type="button" className="btn-secondary min-h-[48px] px-6" onClick={() => setLimit((n) => n + PAGE)}>Show {Math.min(PAGE, list.length - limit)} more ({list.length - limit} left)</button></div>
+      )}
     </div>
   );
 }

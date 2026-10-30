@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Puri website ka scrollbar hide karne ke liye */
+html, body {
+  -ms-overflow-style: none;  /* Internet Explorer aur Edge ke liye */
+  scrollbar-width: none;     /* Firefox ke liye */
+}
+
+html::-webkit-scrollbar, 
+body::-webkit-scrollbar {
+  display: none;             /* Chrome, Safari aur Opera ke liye */
+}
+
 @layer base {
   html { scroll-behavior: smooth; }
   [id] { scroll-margin-top: 7rem; }
