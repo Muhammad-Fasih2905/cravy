@@ -12,7 +12,7 @@ const PIN = `<svg width="34" height="44" viewBox="0 0 34 44" xmlns="http://www.w
  * The customer drops a pin where the order should be delivered: tap the map, drag the pin, or use their current
  * location. Only the coordinates leave this component. The server measures the distance and sets the delivery charge.
  */
-export function LocationPicker({ value, onChange, invalid }: { value: LatLng | null; onChange: (v: LatLng) => void; invalid?: boolean }) {
+export function LocationPicker({ value, onChange, invalid, hideLocate = false }: { value: LatLng | null; onChange: (v: LatLng) => void; invalid?: boolean; hideLocate?: boolean }) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<LeafletMap | null>(null);
   const marker = useRef<Marker | null>(null);
@@ -55,7 +55,7 @@ export function LocationPicker({ value, onChange, invalid }: { value: LatLng | n
   useEffect(() => {
     if (!value || !map.current) return;
     const cur = marker.current?.getLatLng();
-    if (!cur || Math.abs(cur.lat - value.latitude) > 1e-7 || Math.abs(cur.lng - value.longitude) > 1e-7) place(value.latitude, value.longitude);
+    if (!cur || Math.abs(cur.lat - value.latitude) > 1e-7 || Math.abs(cur.lng - value.longitude) > 1e-7) place(value.latitude, value.longitude, true);
   }, [value]);
 
   function locate() {
@@ -72,10 +72,12 @@ export function LocationPicker({ value, onChange, invalid }: { value: LatLng | n
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={locate} disabled={locating} className="btn-secondary min-h-[44px] gap-2 px-4 text-sm">
-          {locating ? <FiLoader className="animate-spin" aria-hidden /> : <FiCrosshair aria-hidden />}Use my current location
-        </button>
-        <span className="flex items-center gap-1 text-sm"><FiMapPin aria-hidden />{value ? "Pin placed. Drag it to fine-tune." : "Or tap the map to drop a pin."}</span>
+        {!hideLocate && (
+          <button type="button" onClick={locate} disabled={locating} className="btn-secondary min-h-[44px] gap-2 px-4 text-sm">
+            {locating ? <FiLoader className="animate-spin" aria-hidden /> : <FiCrosshair aria-hidden />}Use my current location
+          </button>
+        )}
+        <span className="flex items-center gap-1 text-sm"><FiMapPin aria-hidden />{value ? "Pin placed. Drag it to fine-tune." : hideLocate ? "Tap the map to drop a pin." : "Or tap the map to drop a pin."}</span>
       </div>
       <div ref={el} role="application" aria-label="Map: tap to set your delivery location"
         className={`h-72 w-full overflow-hidden rounded-2xl border-2 sm:h-80 ${invalid ? "border-strawberry" : "border-vanilla-deep"}`} />

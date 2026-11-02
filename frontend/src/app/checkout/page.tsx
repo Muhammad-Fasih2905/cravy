@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FiAlertCircle, FiDollarSign as Banknote, FiSmartphone as Smartphone, FiLoader as Loader2, FiLock, FiTruck } from "react-icons/fi";
+import { FiAlertCircle, FiDollarSign as Banknote, FiSmartphone as Smartphone, FiLoader as Loader2, FiLock, FiMapPin, FiTruck } from "react-icons/fi";
+import { haversineKm, openLocationModal, saveLocation, useSavedLocation } from "@/lib/location";
 import { formatPKR } from "@/lib/money";
 import type { LatLng, OrderInput } from "@/lib/types";
 import { useCreateOrderMutation, useGetPaymentMethodsQuery, useGetQuoteMutation } from "@/store/api";
@@ -28,6 +29,21 @@ export default function CheckoutPage() {
   const [formError, setFormError] = useState("");
   const keyRef = useRef<string>();
 
+  // A location chosen in the popup (navbar) fills this form. If the customer skipped the popup, they enter it here instead.
+  const saved = useSavedLocation();
+  const appliedStamp = useRef<number | null>(null);
+  const addrTouched = useRef(false);
+  useEffect(() => {
+    if (!saved || appliedStamp.current === saved.stamp) return;
+    appliedStamp.current = saved.stamp;
+    if (saved.latitude != null && saved.longitude != null) setLoc({ latitude: saved.latitude, longitude: saved.longitude });
+    setF((prev) => ({ ...prev, city: saved.city, address: addrTouched.current && prev.address ? prev.address : (saved.address ?? `${saved.area}, ${saved.city}`) }));
+  }, [saved]);
+  // Already chosen in the popup (not just a pin dropped on this page)? Then "Use my current location" is not needed here.
+  const hideLocate = !!saved && saved.source !== "pin" && saved.latitude != null && saved.longitude != null;
+  // A location (with coordinates) is already set in the navbar: the whole "Delivery location" map block is not shown here.
+  const hasNavLocation = !!saved && saved.latitude != null && saved.longitude != null;
+
   const ICONS = { COD: Banknote, EASYPAISA: Smartphone } as const;
   const HINTS = { COD: "Pay in cash when your order arrives. Nothing to pay online.", EASYPAISA: "Pay online now from the Easypaisa app" } as const;
   const methods = (payMethods ?? (payError ? [{ method: "COD", label: "Cash on Delivery", enabled: true, description: "" }] : []))
@@ -47,7 +63,24 @@ export default function CheckoutPage() {
   const quoteMsg = quoteErr && "data" in quoteErr ? ((quoteErr.data as { detail?: unknown })?.detail as string | undefined) : quoteErr ? "Could not reach the server" : undefined;
   const outOfRange = !!quote && quote.deliverable === false;
 
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value });
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (k === "address") addrTouched.current = true;
+    setF({ ...f, [k]: e.target.value });
+  };
+
+  // The pin was moved or placed on this page: keep the navbar location in step with it.
+  const onPin = (v: LatLng) => {
+    setLoc(v);
+    setErrors((e) => ({ ...e, location: "" }));
+    const near = !!saved && saved.latitude != null && saved.longitude != null && haversineKm({ lat: saved.latitude, lng: saved.longitude }, { lat: v.latitude, lng: v.longitude }) < 0.4;
+    const next = saveLocation({
+      city: f.city.trim() || saved?.city || "Karachi",
+      area: near && saved ? saved.area : "Pinned location",
+      address: near && saved ? saved.address : (f.address.trim() || undefined),
+      latitude: v.latitude, longitude: v.longitude, source: "pin",
+    });
+    appliedStamp.current = next.stamp;
+  };
 
   function validate() {
     const e: Record<string, string> = {};
@@ -57,10 +90,12 @@ export default function CheckoutPage() {
     if (!loc) e.location = "Please set your delivery location on the map";
     else if (outOfRange) e.location = quote?.delivery_message ?? "Sorry, that location is outside our delivery range";
     if (f.city.trim().length < 2) e.city = "Please enter your city";
-    if (f.address.trim().length < 5) e.address = "Please enter your full delivery address";
     setErrors(e);
     return Object.keys(e).length === 0;
   }
+
+  // The delivery address comes from the location chosen in the popup (no separate field on this page).
+  const deliveryAddress = () => f.address.trim() || (saved ? (saved.address ?? `${saved.area}, ${saved.city}`) : "") || `Pinned location, ${f.city.trim()}`;
 
   async function submit(ev: React.FormEvent) {
     ev.preventDefault();
@@ -73,7 +108,7 @@ export default function CheckoutPage() {
         body: {
           items: items.map(({ product_id, variant_id, addon_ids, quantity }) => ({ product_id, variant_id, addon_ids, quantity })),
           latitude: loc!.latitude, longitude: loc!.longitude, coupon_code: coupon, customer_name: f.name.trim(), customer_phone: f.phone.trim(), customer_email: f.email.trim() || null,
-          city: f.city.trim(), address: f.address.trim(), landmark: f.landmark.trim() || null,
+          city: f.city.trim(), address: deliveryAddress(), landmark: f.landmark.trim() || null,
           instructions: f.notes.trim() || null, payment_method: method,
         },
       }).unwrap();
@@ -101,7 +136,16 @@ export default function CheckoutPage() {
       <form onSubmit={submit} noValidate className="space-y-8">
         <h1 className="text-4xl">Checkout</h1>
         <section className="card space-y-4 p-6" aria-labelledby="d">
-          <h2 id="d" className="text-xl">Delivery details</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 id="d" className="text-xl">Delivery details</h2>
+            <button type="button" onClick={() => openLocationModal()} className="inline-flex min-h-[44px] items-center gap-2 rounded-pill border-2 border-forest/25 px-4 text-sm font-semibold text-forest transition hover:border-forest hover:bg-forest-100"><FiMapPin aria-hidden />{saved ? "Change area" : "Choose area"}</button>
+          </div>
+          {saved && (
+            <div className="flex items-start gap-3 rounded-2xl bg-forest-100 p-4 text-sm">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-forest text-lg text-cream"><FiMapPin aria-hidden /></span>
+              <div className="min-w-0"><p className="font-bold text-forest">Delivering to {saved.area}, {saved.city}</p><p className="text-ink/70">Your delivery address is taken from this location. Add a landmark below to help the rider find you.</p></div>
+            </div>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">Full name<input className={field} value={f.name} onChange={set("name")} autoComplete="name" aria-invalid={!!errors.name} aria-describedby="name-err" /><Err k="name" /></label>
             <label className="block">Phone<input className={field} value={f.phone} onChange={set("phone")} inputMode="tel" autoComplete="tel" aria-invalid={!!errors.phone} aria-describedby="phone-err" /><Err k="phone" /></label>
@@ -109,8 +153,12 @@ export default function CheckoutPage() {
             <label className="block">City<input className={field} value={f.city} onChange={set("city")} autoComplete="address-level2" aria-invalid={!!errors.city} aria-describedby="city-err" /><Err k="city" /></label>
           </div>
           <div>
-            <p className="mb-1">Delivery location</p>
-            <LocationPicker value={loc} onChange={(v) => { setLoc(v); setErrors((e) => ({ ...e, location: "" })); }} invalid={!!errors.location || outOfRange} />
+            {!hasNavLocation && (
+              <>
+                <p className="mb-1">Delivery location</p>
+                <LocationPicker value={loc} onChange={onPin} invalid={!!errors.location || outOfRange} hideLocate={hideLocate} />
+              </>
+            )}
             <Err k="location" />
             {/* Only the charge that applies to THIS customer is shown (no price list). It appears once a location is set. */}
             {loc && quoting && !quote && (
@@ -119,9 +167,9 @@ export default function CheckoutPage() {
             {loc && quote && !quote.delivery_pending && (outOfRange ? (
               <div role="alert" className="mt-3 flex items-start gap-3 rounded-2xl border-2 border-strawberry/40 bg-strawberry/10 p-4 text-sm text-strawberry">
                 <FiAlertCircle aria-hidden className="mt-0.5 shrink-0 text-lg" />
-                <p>{quote.delivery_message ?? "Sorry, that location is outside our delivery range."} Move the pin closer to the shop.</p>
+                <p>{quote.delivery_message ?? "Sorry, that location is outside our delivery range."} {hasNavLocation ? "Please choose a different area." : "Move the pin closer to the shop."}</p>
               </div>
-            ) : (
+            ) : hasNavLocation ? null : (
               <div role="status" aria-busy={quoting} className={`mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-2xl border-2 border-forest bg-forest-100 p-4 transition-opacity ${quoting ? "opacity-60" : ""}`}>
                 <div className="flex min-w-0 items-center gap-3">
                   <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-forest text-lg text-cream">{quoting ? <Loader2 className="animate-spin" aria-hidden /> : <FiTruck aria-hidden />}</span>
@@ -134,7 +182,6 @@ export default function CheckoutPage() {
               </div>
             ))}
           </div>
-          <label className="block">Delivery address<input className={field} value={f.address} onChange={set("address")} autoComplete="street-address" aria-invalid={!!errors.address} aria-describedby="address-err" /><Err k="address" /></label>
           <label className="block">Nearby landmark (optional)<input className={field} value={f.landmark} onChange={set("landmark")} /></label>
           <label className="block">Delivery instructions (optional)<textarea className={`${field} py-3`} rows={2} value={f.notes} onChange={set("notes")} /></label>
         </section>

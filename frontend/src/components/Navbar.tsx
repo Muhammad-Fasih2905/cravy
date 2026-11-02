@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion, useScroll, useSpring } from "framer-motion";
 import { FiShoppingBag, FiArrowUpRight } from "react-icons/fi";
+import { LocationChip, LocationRow } from "@/components/LocationChip";
 import Image from "next/image";
 import logo from "@/assets/CravyLogoNavbar.webp";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -75,29 +76,33 @@ export function Navbar() {
             over product cards and over the hero. Scrolling makes it denser, more compact and adds a shadow. */}
         <nav
           aria-label="Main"
-          className={`relative mx-auto grid w-full max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-2 overflow-hidden rounded-full border px-3 transition-all duration-500 sm:gap-4 sm:px-4 ${isScrolled || isOpen
+          className={`relative mx-auto flex w-full max-w-7xl items-center justify-between gap-2 overflow-hidden md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] rounded-full border px-3 transition-all duration-500 sm:gap-4 sm:px-4 ${isScrolled || isOpen
               ? "border-cream/15 bg-forest/95 py-1.5 shadow-[0_18px_40px_-16px_rgba(0,0,0,.65)] backdrop-blur-xl"
               : "border-cream/10 bg-forest/90 py-2.5 shadow-[0_10px_30px_-18px_rgba(0,0,0,.5)] backdrop-blur-md"
             }`}
         >
-          <Link
-            href="/"
-            aria-label="Cravy home"
-            onClick={() => setIsOpen(false)}
-            className="col-start-1 shrink-0 justify-self-start rounded-full transition duration-300 hover:-rotate-2 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mango"
-          >
-            <Image
-              src={logo}
-              alt="Cravy"
-              priority
-              sizes="(max-width: 640px) 120px, 180px"
-              className={`w-auto max-w-[42vw] object-contain transition-all duration-500 ${isScrolled || isOpen ? "-my-1.5 h-12 sm:-my-2 sm:h-14 lg:-my-3 lg:h-16" : "-my-2 h-14 sm:-my-3 sm:h-[4.5rem] lg:-my-4 lg:h-20"}`}
-            />
-          </Link>
+          {/* Left: logo + the delivery-location button (the popup opens from here) */}
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <Link
+              href="/"
+              aria-label="Cravy home"
+              onClick={() => setIsOpen(false)}
+              className="shrink-0 rounded-full transition duration-300 hover:-rotate-2 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mango"
+            >
+              <Image
+                src={logo}
+                alt="Cravy"
+                priority
+                sizes="(max-width: 640px) 120px, 180px"
+                className={`w-auto max-w-[32vw] object-contain transition-all duration-500 sm:max-w-[180px] ${isScrolled || isOpen ? "-my-1.5 h-12 sm:-my-2 sm:h-14 lg:-my-3 lg:h-16" : "-my-2 h-14 sm:-my-3 sm:h-[4.5rem] lg:-my-4 lg:h-20"}`}
+              />
+            </Link>
+            <div className="min-w-0"><LocationChip /></div>
+          </div>
 
-          {/* Desktop links: perfectly centred, with a sliding mango highlight */}
+          {/* Centre: desktop links, with a sliding mango highlight (the grid keeps them in the true middle of the bar) */}
           <div
-            className="col-start-2 hidden items-center gap-0.5 rounded-full bg-cream/[.07] p-1 text-[15px] font-semibold tracking-wide ring-1 ring-cream/10 md:flex xl:text-base"
+            className="hidden items-center gap-0.5 rounded-full bg-cream/[.07] p-1 text-[15px] font-semibold tracking-wide ring-1 ring-cream/10 md:flex xl:text-base"
             onMouseLeave={() => setHovered(null)}
           >
             {LINKS.map((l) => {
@@ -127,7 +132,9 @@ export function Navbar() {
             })}
           </div>
 
-          <div className="col-start-3 flex items-center justify-self-end gap-2">
+
+          {/* Right: cart and menu button */}
+          <div className="flex shrink-0 items-center justify-self-end gap-2 sm:gap-3">
             {/* Cart: cream button on the green bar, turns mango on hover (the badge stays readable) */}
             <motion.button
               whileTap={{ scale: 0.93 }}
@@ -184,6 +191,8 @@ export function Navbar() {
             transition={{ duration: 0.55, ease: [0.76, 0, 0.24, 1] }}
           >
             <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-mango/20 blur-3xl" />
+
+            <div className="relative"><LocationRow onNavigate={() => setIsOpen(false)} /></div>
 
             <ul className="relative my-auto flex flex-col gap-1 py-6 sm:gap-2">
               {LINKS.map((l, i) => (

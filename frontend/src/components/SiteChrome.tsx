@@ -2,6 +2,7 @@
 import { usePathname } from "next/navigation";
 import { CartDrawer } from "@/components/CartDrawer";
 import { Footer } from "@/components/Footer";
+import { LocationModal } from "@/components/LocationModal";
 import { Navbar } from "@/components/Navbar";
 
 /**
@@ -23,6 +24,7 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
             <div className={home ? "[&>main>section:first-child]:pt-28 sm:[&>main>section:first-child]:pt-32 lg:[&>main>section:first-child]:pt-36" : "pt-[4.75rem] sm:pt-[5rem] lg:pt-[5.5rem]"}>{children}</div>
             <Footer />
             <CartDrawer />
+            <LocationModal />
         </>
     );
 }
