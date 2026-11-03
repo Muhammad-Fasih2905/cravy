@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { AnimatePresence, motion, useScroll, useSpring } from "framer-motion";
 import { FiShoppingBag, FiArrowUpRight } from "react-icons/fi";
 import { LocationChip, LocationRow } from "@/components/LocationChip";
+import { ShopStatus } from "@/components/ShopStatus";
 import Image from "next/image";
 import logo from "@/assets/CravyLogoNavbar.webp";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -135,6 +136,8 @@ export function Navbar() {
 
           {/* Right: cart and menu button */}
           <div className="flex shrink-0 items-center justify-self-end gap-2 sm:gap-3">
+            {/* Shop open/closed (2 PM - 2 AM, Karachi time); on phones it is at the top of the full-screen menu */}
+            <ShopStatus className="hidden lg:inline-flex" />
             {/* Cart: cream button on the green bar, turns mango on hover (the badge stays readable) */}
             <motion.button
               whileTap={{ scale: 0.93 }}
@@ -192,6 +195,7 @@ export function Navbar() {
           >
             <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-mango/20 blur-3xl" />
 
+            <div className="relative mb-3"><ShopStatus className="!h-12 w-full" /></div>
             <div className="relative"><LocationRow onNavigate={() => setIsOpen(false)} /></div>
 
             <ul className="relative my-auto flex flex-col gap-1 py-6 sm:gap-2">
