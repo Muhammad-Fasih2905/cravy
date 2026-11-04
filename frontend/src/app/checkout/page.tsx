@@ -174,7 +174,7 @@ export default function CheckoutPage() {
                 <div className="flex min-w-0 items-center gap-3">
                   <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-forest text-lg text-cream">{quoting ? <Loader2 className="animate-spin" aria-hidden /> : <FiTruck aria-hidden />}</span>
                   <div className="min-w-0">
-                    <p className="font-bold text-forest">Delivery to your location</p>
+                    <p className="font-bold text-forest">Deliver to your location</p>
                     <p className="text-sm">{quote.distance_km != null ? <>{quote.distance_km.toFixed(1)} km from the shop</> : "Distance calculated"}{quote.delivery_band ? <span className="text-ink/60"> · {quote.delivery_band}</span> : null}</p>
                   </div>
                 </div>

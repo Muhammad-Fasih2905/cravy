@@ -8,7 +8,7 @@ import { FiArrowRight, FiChevronLeft, FiChevronRight } from "react-icons/fi";
 import { HERO_SLIDES, type HeroSlide } from "@/config/heroSlides";
 
 const serif = Fraunces({ subsets: ["latin"], style: ["normal", "italic"], display: "swap" });
-const AUTOPLAY_MS = 5500;
+const AUTOPLAY_MS = 4000;
 
 /** Small original illustrations (Cravy palette) used when a slide has no photo. */
 function Art({ kind }: { kind: HeroSlide["art"] }) {

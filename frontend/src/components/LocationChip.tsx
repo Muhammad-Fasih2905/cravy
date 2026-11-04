@@ -33,14 +33,14 @@ export function LocationChip() {
   const fee = est ? (est.inRange ? (est.charge === 0 ? "FREE" : formatPKR(est.charge ?? 0)) : "Out of range") : null;
   return (
     <button type="button" onClick={() => openLocationModal()} aria-haspopup="dialog"
-      aria-label={place ? `Delivery to ${place}${fee ? `, ${fee}` : ""}. Change location` : "Set your delivery location"}
+      aria-label={place ? `Deliver to ${place}${fee ? `, ${fee}` : ""}. Change location` : "Set your delivery location"}
       className="group flex h-11 min-w-0 max-w-full items-center gap-2 rounded-full bg-cream/10 pr-1 ring-1 ring-cream/15 transition hover:bg-cream/[.16] hover:ring-mango/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mango min-[400px]:pr-3 sm:h-12">
       <span className="relative grid h-11 w-11 shrink-0 place-items-center sm:h-12 sm:w-12">
         {!saved && <span aria-hidden className="absolute h-8 w-8 animate-ping rounded-full bg-mango/40" />}
         <span className="relative grid h-8 w-8 place-items-center rounded-full bg-mango text-base text-forest transition group-hover:scale-110 sm:h-9 sm:w-9 sm:text-lg"><FiMapPin aria-hidden /></span>
       </span>
       <span className="hidden min-w-0 flex-col justify-center text-left leading-[1.15] min-[400px]:flex md:hidden lg:flex">
-        <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-[.14em] text-mango">{saved ? "Delivery to" : "Delivery"}<FiChevronDown aria-hidden className="text-xs transition group-hover:translate-y-0.5" /></span>
+        <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-[.14em] text-mango">{saved ? "Deliver to" : "Delivery"}<FiChevronDown aria-hidden className="text-xs transition group-hover:translate-y-0.5" /></span>
         <span className="block max-w-[8.5rem] truncate text-[13px] font-semibold text-cream min-[400px]:max-w-[9.5rem] sm:max-w-[13rem] lg:max-w-[12rem] xl:max-w-[14rem]">{place ?? "Set your location"}</span>
       </span>
       {fee && (

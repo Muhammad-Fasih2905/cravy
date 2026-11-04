@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from "react";
 const LINKS = [
   { label: "Menu", href: "/menu", hint: "Browse everything we make" },
   { label: "Reviews", href: "/#reviews", hint: "What our customers say" },
-  { label: "FAQ", href: "/#faq", hint: "Delivery, ordering and more" },
+  { label: "FAQ", href: "/#faq", hint: "Deliver, ordering and more" },
 ];
 
 export function Navbar() {
