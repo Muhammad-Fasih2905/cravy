@@ -53,10 +53,10 @@ export function ProductCard({ p }: { p: Product }) {
     // Phones: a horizontal row (picture on the left, details on the right). From 640px: the vertical card.
     <motion.article layout initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} whileHover={{ y: -4 }} transition={{ duration: 0.35 }}
       className="card flex gap-3.5 rounded-[1.25rem] p-3 hover:shadow-lift sm:flex-col sm:gap-3 sm:rounded-card sm:p-5">
-      <div className="relative aspect-square w-[38%] max-w-[11rem] shrink-0 self-start overflow-hidden rounded-xl bg-gradient-to-br from-vanilla to-mint sm:-mx-5 sm:-mt-5 sm:mb-1 sm:aspect-[4/3] sm:w-auto sm:max-w-none sm:self-stretch sm:rounded-b-none sm:rounded-t-card">
+      <div className="relative aspect-square w-[38%] max-w-[11rem] shrink-0 self-start overflow-hidden rounded-xl bg-gradient-to-br from-vanilla to-mint sm:-mx-5 sm:-mt-5 sm:mb-1 sm:aspect-square sm:w-auto sm:max-w-none sm:self-stretch sm:rounded-b-none sm:rounded-t-card">
         {percent > 0 && <span className="absolute left-2 top-2 z-10 rounded-pill bg-strawberry px-2 py-0.5 text-[11px] font-extrabold text-cream shadow-card sm:left-3 sm:top-3 sm:px-3 sm:py-1 sm:text-sm">{percent}% OFF</span>}
         {p.image_url ? (
-          <Image src={p.image_url.startsWith("http") ? p.image_url : `${API}${p.image_url}`} alt={p.name} fill sizes="(max-width: 640px) 38vw, (max-width: 1024px) 50vw, 33vw" className="object-cover transition duration-500 hover:scale-105" unoptimized={API.includes("localhost")} />
+          <Image src={p.image_url.startsWith("http") ? p.image_url : `${API}${p.image_url}`} alt={p.name} fill sizes="(max-width: 640px) 38vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 480px" quality={85} className="object-cover object-center" unoptimized={API.includes("localhost")} />
         ) : (
           <div className="grid h-full place-items-center text-forest/40" aria-hidden><GiIceCreamCone size={48} /></div>
         )}
