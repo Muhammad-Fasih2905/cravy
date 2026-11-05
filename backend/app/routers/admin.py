@@ -1,3 +1,5 @@
+import asyncio
+import json
 import re
 import secrets
 import time
@@ -5,22 +7,27 @@ from pathlib import Path
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models
 from ..db import get_db
 from ..config import settings as cfg
+from ..discounts import apply_discount
+from ..payments import PK_MOBILE
 from ..pricing import get_settings
 from ..uploads import save_upload
-from ..security import get_admin, make_token, verify_password
+from ..realtime import broker, publish_order
+from ..security import get_admin, get_admin_flex, make_token, verify_password
+from ..serializers import order_detail as _detail
+from ..slip import render_slip
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
-STATUSES = {"PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY_FOR_DISPATCH", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"}
-PAY_STATUSES = {"UNPAID", "PENDING_VERIFICATION", "PAID", "FAILED", "REFUNDED"}
+STATUSES = {"PENDING", "COMPLETED", "CANCELLED"}  # new order -> PENDING; admin moves it to COMPLETED once paid
+PAY_STATUSES = {"UNPAID", "AWAITING_PAYMENT", "PENDING_VERIFICATION", "PAID", "FAILED", "REFUNDED"}
 _attempts: dict[str, list[float]] = defaultdict(list)
 
 
@@ -42,37 +49,29 @@ def login(data: LoginIn, request: Request, db: Session = Depends(get_db)):
     return {"token": make_token(a.id)}
 
 
-def _detail(o: models.Order) -> dict:
-    return {
-        "order_number": o.order_number, "status": o.status, "created_at": o.created_at.isoformat(),
-        "customer_name": o.customer_name, "customer_phone": o.customer_phone, "customer_email": o.customer_email,
-        "city": o.city, "address": o.address, "landmark": o.landmark, "instructions": o.instructions,
-        "subtotal": o.subtotal, "delivery_charge": o.delivery_charge, "tax_total": o.tax_total, "delivery_zone": o.delivery_zone, "discount_total": o.discount_total, "total": o.total,
-        "coupon_code": o.coupon_code,
-        "items": [{"name": i.product_name, "variant": i.variant_name, "addons": i.addons, "quantity": i.quantity, "line_total": i.line_total} for i in o.items],
-        "payment_method": o.payment.method, "payment_status": o.payment.status,
-        "transaction_ref": o.payment.transaction_ref, "admin_note": o.payment.admin_note, "has_receipt": bool(o.payment.receipt_path),
-    }
-
-
 @router.get("/stats")
 def stats(_: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
-    O = models.Order
+    O, P = models.Order, models.Payment
     start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     count = lambda *w: db.scalar(select(func.count(O.id)).where(*w)) or 0  # noqa: E731
-    recent = db.scalars(select(O).where(O.status != "CANCELLED", O.created_at >= start - timedelta(days=6))).all()
+    money = lambda *w: db.scalar(select(func.coalesce(func.sum(O.total), 0)).where(*w)) or 0  # noqa: E731
+    done = db.scalars(select(O).where(O.status == "COMPLETED", O.completed_at >= start - timedelta(days=6))).all()
     daily: dict[str, int] = defaultdict(int)
-    for o in recent:
-        daily[o.created_at.date().isoformat()] += o.total
+    for o in done:
+        daily[o.completed_at.date().isoformat()] += o.total
     top = db.execute(
         select(models.OrderItem.product_name, func.sum(models.OrderItem.quantity).label("q"))
+        .join(O, O.id == models.OrderItem.order_id).where(O.status != "CANCELLED")
         .group_by(models.OrderItem.product_name).order_by(desc("q")).limit(5)
     ).all()
+    pay_count = lambda st: db.scalar(select(func.count(P.id)).join(O, O.id == P.order_id).where(P.status == st, O.status != "CANCELLED")) or 0  # noqa: E731
     return {
         "total_orders": count(), "today_orders": count(O.created_at >= start),
-        "total_sales": db.scalar(select(func.coalesce(func.sum(O.total), 0)).where(O.status != "CANCELLED")),
-        "pending_orders": count(O.status == "PENDING_CONFIRMATION"), "completed_orders": count(O.status == "DELIVERED"),
-        "pending_payments": db.scalar(select(func.count(models.Payment.id)).where(models.Payment.status == "PENDING_VERIFICATION")) or 0,
+        "pending_orders": count(O.status == "PENDING"), "completed_orders": count(O.status == "COMPLETED"),
+        "cancelled_orders": count(O.status == "CANCELLED"),
+        "total_sales": money(O.status == "COMPLETED"),  # money actually received (completed orders)
+        "pending_amount": money(O.status == "PENDING"),  # still to be collected
+        "pending_payments": pay_count("PENDING_VERIFICATION"), "awaiting_payments": pay_count("AWAITING_PAYMENT"),
         "bestsellers": [{"name": n, "quantity": int(q)} for n, q in top],
         "daily_sales": [{"date": (start - timedelta(days=d)).date().isoformat(),
                          "total": daily.get((start - timedelta(days=d)).date().isoformat(), 0)} for d in range(6, -1, -1)],
@@ -80,15 +79,47 @@ def stats(_: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db
 
 
 @router.get("/orders")
-def orders(status: str | None = None, method: str | None = None, q: str | None = None,
-           _: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
+def orders(status: str | None = None, method: str | None = None, q: str | None = None, updated_since: datetime | None = None,
+           limit: int = 200, _: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
+    """Always read straight from the database. `updated_since` lets the dashboard catch up after a dropped live connection."""
     stmt = select(models.Order).join(models.Payment).options(selectinload(models.Order.items), selectinload(models.Order.payment))
     if status: stmt = stmt.where(models.Order.status == status)
     if method: stmt = stmt.where(models.Payment.method == method)
+    if updated_since:
+        stmt = stmt.where(models.Order.updated_at >= updated_since.replace(tzinfo=updated_since.tzinfo or timezone.utc))
     if q:
         like = f"%{q.strip()}%"
         stmt = stmt.where(or_(models.Order.order_number.ilike(like), models.Order.customer_phone.ilike(like), models.Order.customer_name.ilike(like)))
-    return [_detail(o) for o in db.scalars(stmt.order_by(desc(models.Order.created_at)).limit(200))]
+    return [_detail(o) for o in db.scalars(stmt.order_by(desc(models.Order.created_at)).limit(max(1, min(limit, 500))))]
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@router.get("/orders/stream")
+async def orders_stream(request: Request, _: models.AdminUser = Depends(get_admin_flex), db: Session = Depends(get_db)):
+    """Live feed (Server-Sent Events): `order.created` and `order.updated`, each carrying the full saved order.
+    Browsers can't set headers on EventSource, so the admin token may be passed as ?token=..."""
+    db.close()  # authenticated; don't hold a database connection for the lifetime of the stream
+
+    async def gen():
+        q = broker.subscribe()
+        try:
+            yield "retry: 3000\n\n"
+            yield _sse("ready", {"ok": True})
+            while not await request.is_disconnected():
+                try:
+                    event, data = await asyncio.wait_for(q.get(), timeout=15)
+                    yield _sse(event, data)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"  # keeps proxies from closing an idle connection
+        finally:
+            broker.unsubscribe(q)
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", "Connection": "keep-alive",
+        "Content-Encoding": "identity"})
 
 
 def _order(db: Session, n: str) -> models.Order:
@@ -98,15 +129,51 @@ def _order(db: Session, n: str) -> models.Order:
     return o
 
 
+@router.get("/orders/{n}")
+def order_detail(n: str, _: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
+    return _detail(_order(db, n))
+
+
+@router.get("/orders/{n}/slip", response_class=HTMLResponse)
+def order_slip(n: str, autoprint: bool = False, _: models.AdminUser = Depends(get_admin_flex), db: Session = Depends(get_db)):
+    """Printable slip. Open /api/admin/orders/{n}/slip?autoprint=1&token=... in a new tab to print straight away."""
+    o = _order(db, n)
+    s = get_settings(db)
+    return HTMLResponse(render_slip(_detail(o), s.business_name, s.phone, autoprint))
+
+
 class StatusIn(BaseModel):
     status: str
 
 
 @router.patch("/orders/{n}/status")
 def set_status(n: str, data: StatusIn, _: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
+    """PENDING -> COMPLETED (payment received) or CANCELLED. Both are final.
+    Completing a COD order records the cash as PAID in the same transaction. Returns the saved order."""
     if data.status not in STATUSES:
         raise HTTPException(422, "Invalid status")
-    o = _order(db, n); o.status = data.status; db.commit()
+    o = _order(db, n)
+    if data.status == o.status:
+        return _detail(o)
+    if o.status != "PENDING":
+        raise HTTPException(409, f"This order is already {o.status.lower()} and cannot be changed")
+    p = o.payment
+    if data.status == "COMPLETED":
+        if p.method == "EASYPAISA" and p.status != "PAID":
+            raise HTTPException(409, "Verify the Easypaisa payment (mark it PAID) before completing this order")
+        if p.method == "COD" and p.status != "PAID":
+            p.status = "PAID"  # the cash has come in
+        o.completed_at = models.now()
+    elif data.status == "CANCELLED" and o.coupon_code:  # give the coupon use back
+        c = db.scalar(select(models.Coupon).where(models.Coupon.code == o.coupon_code))
+        if c and c.used_count > 0:
+            c.used_count -= 1
+    elif data.status == "PENDING":
+        raise HTTPException(409, "An order cannot go back to pending")
+    o.status = data.status
+    o.updated_at = models.now()
+    db.commit()
+    publish_order("order.updated", o)
     return _detail(o)
 
 
@@ -119,7 +186,20 @@ class PaymentIn(BaseModel):
 def set_payment(n: str, data: PaymentIn, _: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
     if data.status not in PAY_STATUSES:
         raise HTTPException(422, "Invalid payment status")
-    o = _order(db, n); o.payment.status = data.status; o.payment.admin_note = data.note; db.commit()
+    o = _order(db, n)
+    p = o.payment
+    if p.method == "COD" and data.status in ("AWAITING_PAYMENT", "PENDING_VERIFICATION"):
+        raise HTTPException(422, "Not valid for a Cash on Delivery order")
+    if data.status == "PAID" and o.status == "CANCELLED":
+        raise HTTPException(409, "This order is cancelled")
+    if data.status == "REFUNDED" and p.status != "PAID":
+        raise HTTPException(422, "Only a paid order can be refunded")
+    p.status = data.status
+    if data.note is not None:
+        p.admin_note = data.note
+    o.updated_at = models.now()
+    db.commit()
+    publish_order("order.updated", o)
     return _detail(o)
 
 
@@ -127,18 +207,24 @@ class SettingsIn(BaseModel):
     business_name: str | None = None
     phone: str | None = None
     announcement: str | None = None
-    delivery_charge: int | None = Field(default=None, ge=0)
     min_order_value: int | None = Field(default=None, ge=0)
+    shop_latitude: float | None = Field(default=None, ge=-90, le=90)  # delivery distance is measured from here
+    shop_longitude: float | None = Field(default=None, ge=-180, le=180)
     tax_percent: int | None = Field(default=None, ge=0, le=100)
     cod_enabled: bool | None = None
     easypaisa_enabled: bool | None = None
     easypaisa_name: str | None = None
     easypaisa_number: str | None = None
-    bank_enabled: bool | None = None
-    bank_name: str | None = None
-    bank_account_title: str | None = None
-    bank_account_number: str | None = None
-    bank_iban: str | None = None
+
+    @field_validator("easypaisa_number")
+    @classmethod
+    def _valid_number(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        v = v.replace(" ", "").replace("-", "")
+        if not PK_MOBILE.match(v):
+            raise ValueError("Enter a valid Easypaisa mobile number, e.g. 03143404938")
+        return v
 
 
 def _settings_dict(s: models.BusinessSettings) -> dict:
@@ -154,8 +240,17 @@ def get_admin_settings(_: models.AdminUser = Depends(get_admin), db: Session = D
 @router.put("/settings")
 def put_admin_settings(data: SettingsIn, _: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
     s = get_settings(db)
-    for k, v in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    if changes.get("easypaisa_number", "x") is None:
+        raise HTTPException(422, "Easypaisa number cannot be empty")
+    for k, v in changes.items():
         setattr(s, k, v)
+    if not s.cod_enabled and not s.easypaisa_enabled:
+        db.rollback()
+        raise HTTPException(422, "At least one payment method must stay enabled")
+    if (s.shop_latitude is None) != (s.shop_longitude is None):
+        db.rollback()
+        raise HTTPException(422, "Set both shop latitude and longitude")
     db.commit()
     return _settings_dict(s)
 
@@ -167,13 +262,15 @@ class ProductPatch(BaseModel):
     is_available: bool | None = None
     is_bestseller: bool | None = None
     is_featured: bool | None = None
+    discount_percent: int | None = Field(default=None, ge=0, le=90)  # the admin's own discount for this product (0 = none)
 
 
 @router.get("/products")
 def list_products(_: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
     return [{"id": p.id, "name": p.name, "slug": p.slug, "base_price": p.base_price, "is_available": p.is_available,
-             "is_bestseller": p.is_bestseller, "is_featured": p.is_featured, "is_demo": p.is_demo, "category": p.category.name, "image_url": p.image_url}
-            for p in db.scalars(select(models.Product).options(selectinload(models.Product.category)).order_by(models.Product.category_id, models.Product.sort_order))]
+             "is_bestseller": p.is_bestseller, "is_featured": p.is_featured, "is_demo": p.is_demo, "category": p.category.name, "image_url": p.image_url, "images": p.images,
+             "discount_percent": p.discount_percent or 0, "final_base_price": apply_discount(p.base_price, p.discount_percent)}
+            for p in db.scalars(select(models.Product).options(selectinload(models.Product.category), selectinload(models.Product.image_rows)).order_by(models.Product.category_id, models.Product.sort_order))]
 
 
 @router.patch("/products/{pid}")
@@ -186,11 +283,11 @@ def patch_product(pid: int, data: ProductPatch, _: models.AdminUser = Depends(ge
     if "base_price" in data.model_fields_set or "name" in data.model_fields_set:
         p.is_demo = False if p.is_demo and ("name" in data.model_fields_set) else p.is_demo
     db.commit()
-    return {"id": p.id, "ok": True}
+    return {"id": p.id, "ok": True, "discount_percent": p.discount_percent or 0, "final_base_price": apply_discount(p.base_price, p.discount_percent)}
 
 
 @router.get("/orders/{n}/receipt")
-def get_receipt(n: str, _: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
+def get_receipt(n: str, _: models.AdminUser = Depends(get_admin_flex), db: Session = Depends(get_db)):
     o = _order(db, n)
     if not o.payment.receipt_path:
         raise HTTPException(404, "No receipt uploaded")
@@ -229,14 +326,62 @@ def delete_product(pid: int, _: models.AdminUser = Depends(get_admin), db: Sessi
     return {"ok": True}
 
 
-@router.post("/products/{pid}/image")
-async def product_image(pid: int, file: UploadFile = File(...), _: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
-    p = db.get(models.Product, pid)
+MAX_IMAGES = 8  # photo slots per product
+
+
+def _product_for_images(db: Session, pid: int) -> models.Product:
+    p = db.scalar(select(models.Product).where(models.Product.id == pid).options(selectinload(models.Product.image_rows)))
     if p is None:
         raise HTTPException(404, "Product not found")
-    p.image_url = f"/media/products/{await save_upload(file, 'products', 3)}"
+    return p
+
+
+def _images_out(p: models.Product) -> dict:
+    return {"image_url": p.image_url, "images": p.images}
+
+
+@router.post("/products/{pid}/image")
+async def product_image(pid: int, file: UploadFile = File(...), slot: int = Query(0, ge=0, lt=MAX_IMAGES),
+                        _: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
+    """Put one WebP photo in a slot. slot=0 is the main photo (the default, as before). A slot that already has a photo
+    is replaced; a slot after the last one is added at the end (so the photos always stay in order, with no gaps)."""
+    p = _product_for_images(db, pid)
+    urls = p.images
+    url = f"/media/products/{await save_upload(file, 'products', 3, webp_only=True)}"  # WebP only
+    if slot < len(urls):
+        urls[slot] = url
+    elif len(urls) < MAX_IMAGES:
+        urls.append(url)
+    p.set_images(urls)
     db.commit()
-    return {"image_url": p.image_url}
+    return _images_out(p)
+
+
+@router.post("/products/{pid}/images")
+async def product_images_add(pid: int, files: list[UploadFile] = File(...),
+                             _: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
+    """Add several WebP photos at once. They fill the next free slots, in the order they were sent."""
+    p = _product_for_images(db, pid)
+    urls = p.images
+    if len(urls) + len(files) > MAX_IMAGES:
+        raise HTTPException(422, f"A product can have at most {MAX_IMAGES} photos")
+    saved = [f"/media/products/{await save_upload(f, 'products', 3, webp_only=True)}" for f in files]  # nothing is added if one is not WebP
+    p.set_images(urls + saved)
+    db.commit()
+    return _images_out(p)
+
+
+@router.delete("/products/{pid}/image")
+def product_image_delete(pid: int, slot: int = Query(0, ge=0, lt=MAX_IMAGES), _: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
+    """Remove the photo in a slot; the photos after it move up one slot."""
+    p = _product_for_images(db, pid)
+    urls = p.images
+    if slot >= len(urls):
+        raise HTTPException(404, "No photo in that slot")
+    del urls[slot]
+    p.set_images(urls)
+    db.commit()
+    return _images_out(p)
 
 
 # ---- sizes (variants) and toppings (add-ons) ----
@@ -287,51 +432,3 @@ def put_options(pid: int, data: OptionsIn, _: models.AdminUser = Depends(get_adm
     _sync(db, list(p.addons), data.addons, models.Addon, p.id)
     db.commit(); db.refresh(p)
     return {"variants": _opts(p.variants), "addons": _opts(p.addons)}
-
-
-# ---- delivery zones ----
-class ZoneIn(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=80)
-    city: str | None = Field(default=None, min_length=1, max_length=80)
-    charge: int | None = Field(default=None, ge=0)
-    free_above: int | None = Field(default=None, ge=0)
-    min_order: int | None = Field(default=None, ge=0)
-    is_active: bool | None = None
-
-
-def _zone(z: models.DeliveryZone) -> dict:
-    return {"id": z.id, "name": z.name, "city": z.city, "charge": z.charge, "free_above": z.free_above, "min_order": z.min_order, "is_active": z.is_active}
-
-
-@router.get("/zones")
-def admin_zones(_: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
-    return [_zone(z) for z in db.scalars(select(models.DeliveryZone).order_by(models.DeliveryZone.city, models.DeliveryZone.name))]
-
-
-@router.post("/zones", status_code=201)
-def create_zone(data: ZoneIn, _: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
-    if not data.name or not data.city or data.charge is None:
-        raise HTTPException(422, "Name, city and charge are required")
-    z = models.DeliveryZone(name=data.name.strip(), city=data.city.strip(), charge=data.charge, free_above=data.free_above, min_order=data.min_order)
-    db.add(z); db.commit()
-    return _zone(z)
-
-
-@router.patch("/zones/{zid}")
-def patch_zone(zid: int, data: ZoneIn, _: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
-    z = db.get(models.DeliveryZone, zid)
-    if z is None:
-        raise HTTPException(404, "Zone not found")
-    for k, v in data.model_dump(exclude_unset=True).items():
-        setattr(z, k, v)  # free_above / min_order may be set to null on purpose
-    db.commit()
-    return _zone(z)
-
-
-@router.delete("/zones/{zid}")
-def delete_zone(zid: int, _: models.AdminUser = Depends(get_admin), db: Session = Depends(get_db)):
-    z = db.get(models.DeliveryZone, zid)
-    if z is None:
-        raise HTTPException(404, "Zone not found")
-    db.delete(z); db.commit()
-    return {"ok": True}

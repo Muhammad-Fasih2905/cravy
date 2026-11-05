@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     smtp_pass: str | None = None
     email_from: str | None = None
     admin_notify_email: str | None = None
+    # Easypaisa account customers pay to (override on Railway with EASYPAISA_NUMBER if it ever changes)
+    easypaisa_number: str = "03143404938"
+    easypaisa_account_name: str | None = None
+    # Shop location used to measure delivery distance. Can also be set from the admin settings (SHOP_LATITUDE / SHOP_LONGITUDE).
+    # Default = Akber Paradise, Shop #01, Block 10-A Gulshan-e-Iqbal (Rashid Minhas Rd service lane).
+    shop_latitude: float | None = 24.911012
+    shop_longitude: float | None = 67.105612
 
 
 settings = Settings()

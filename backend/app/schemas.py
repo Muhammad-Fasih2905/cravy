@@ -1,6 +1,8 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from .discounts import apply_discount
 
 
 class Out(BaseModel):
@@ -10,8 +12,9 @@ class Out(BaseModel):
 class VariantOut(Out):
     id: int
     name: str
-    price: int
+    price: int  # regular price
     is_available: bool
+    final_price: int = 0  # price after the product discount: what the customer pays
 
 
 class AddonOut(Out):
@@ -27,15 +30,25 @@ class ProductOut(Out):
     name: str
     slug: str
     description: str | None
-    image_url: str | None
+    image_url: str | None  # the main photo (same as images[0])
+    images: list[str] = []  # all photos in slot order; show every one of them (gallery)
     base_price: int
     is_available: bool
     is_bestseller: bool
     is_featured: bool
     prep_minutes: int | None
     is_demo: bool
+    discount_percent: int = 0
+    final_base_price: int = 0  # base_price after the discount
     variants: list[VariantOut]
     addons: list[AddonOut]
+
+    @model_validator(mode="after")
+    def _apply_discount(self):
+        self.final_base_price = apply_discount(self.base_price, self.discount_percent)
+        for v in self.variants:
+            v.final_price = apply_discount(v.price, self.discount_percent)
+        return self
 
 
 class CategoryOut(Out):
@@ -53,18 +66,12 @@ class PublicSettings(Out):
     business_name: str
     phone: str | None
     announcement: str | None
-    delivery_charge: int
     min_order_value: int
     tax_percent: int
     cod_enabled: bool
     easypaisa_enabled: bool
     easypaisa_name: str | None
     easypaisa_number: str | None
-    bank_enabled: bool
-    bank_name: str | None
-    bank_account_title: str | None
-    bank_account_number: str | None
-    bank_iban: str | None
 
 
 class CartLineIn(BaseModel):
@@ -77,7 +84,9 @@ class CartLineIn(BaseModel):
 class QuoteIn(BaseModel):
     items: list[CartLineIn] = Field(min_length=1, max_length=50)
     coupon_code: str | None = Field(default=None, max_length=40)
-    zone_id: int | None = None
+    # Customer's map pin. The server measures the distance to the shop and applies the fixed delivery rates.
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
 
 
 class QuoteLine(BaseModel):
@@ -88,6 +97,7 @@ class QuoteLine(BaseModel):
     unit_price: int
     quantity: int
     line_total: int
+    discount_percent: int = 0  # the product discount already included in unit_price
 
 
 class QuoteOut(BaseModel):
@@ -100,8 +110,11 @@ class QuoteOut(BaseModel):
     coupon_code: str | None
     meets_minimum: bool
     min_order_value: int
-    delivery_pending: bool = False  # true when a delivery area must still be chosen
-    zone_name: str | None = None
+    delivery_pending: bool = False  # true until the customer's location is known
+    distance_km: float | None = None
+    delivery_band: str | None = None  # e.g. "2-3 km"
+    deliverable: bool = True  # false when the location is beyond the delivery range
+    delivery_message: str | None = None
 
 
 class OrderIn(QuoteIn):
@@ -112,7 +125,16 @@ class OrderIn(QuoteIn):
     address: str = Field(min_length=5, max_length=300)
     landmark: str | None = Field(default=None, max_length=160)
     instructions: str | None = Field(default=None, max_length=300)
-    payment_method: Literal["COD", "EASYPAISA", "BANK_TRANSFER"]
+    payment_method: Literal["COD", "EASYPAISA"]
+
+
+class PaymentInstructions(BaseModel):
+    method: str
+    account_number: str
+    account_name: str | None
+    amount: int
+    reference: str  # the order number: customer should mention it in the Easypaisa payment note
+    message: str
 
 
 class OrderOut(Out):
@@ -125,12 +147,4 @@ class OrderOut(Out):
     total: int
     payment_method: str
     payment_status: str
-
-
-class ZoneOut(Out):
-    id: int
-    name: str
-    city: str
-    charge: int
-    free_above: int | None
-    min_order: int | None
+    payment_instructions: PaymentInstructions | None = None  # only while an Easypaisa payment is still due

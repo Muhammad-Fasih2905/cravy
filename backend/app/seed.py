@@ -6,6 +6,7 @@ from sqlalchemy import select
 from . import models
 from .config import settings
 from .db import Base, SessionLocal, engine
+from .payments import ensure_payment_defaults
 from .security import hash_password
 
 S = lambda a, b, c: [("Small", a), ("Regular", b), ("Large", c)]  # noqa: E731
@@ -27,7 +28,7 @@ def run() -> None:
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
         if db.get(models.BusinessSettings, 1) is None:
-            db.add(models.BusinessSettings(id=1, announcement="Demo announcement: edit in settings.", delivery_charge=100, min_order_value=300))
+            db.add(models.BusinessSettings(id=1, announcement="Demo announcement: edit in settings.", min_order_value=300))
         for ci, (cname, cslug, prods) in enumerate(MENU):
             cat = db.scalar(select(models.Category).where(models.Category.slug == cslug)) or models.Category(slug=cslug, name=cname)
             cat.name, cat.sort_order = cname, ci
@@ -46,6 +47,7 @@ def run() -> None:
         if settings.admin_email and settings.admin_password and db.scalar(select(models.AdminUser)) is None:
             db.add(models.AdminUser(email=settings.admin_email.strip().lower(), password_hash=hash_password(settings.admin_password)))
         db.commit()
+        ensure_payment_defaults(db)
     print("Seeded demo menu (all products flagged is_demo).")
 
 

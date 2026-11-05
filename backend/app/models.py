@@ -1,9 +1,10 @@
 """All money is whole PKR (int). Order items are snapshots."""
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from .config import settings as _cfg
 from .db import Base
 
 
@@ -34,12 +35,42 @@ class Product(Base):
     is_bestseller: Mapped[bool] = mapped_column(Boolean, default=False)
     is_featured: Mapped[bool] = mapped_column(Boolean, default=False)
     prep_minutes: Mapped[int | None] = mapped_column(Integer)
+    discount_percent: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # set by the admin, 0-90 %
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
     category: Mapped[Category] = relationship(back_populates="products")
     variants: Mapped[list["Variant"]] = relationship(cascade="all, delete-orphan", order_by="Variant.sort_order")
     addons: Mapped[list["Addon"]] = relationship(cascade="all, delete-orphan", order_by="Addon.sort_order")
+    # Photo slots: slot 1 is the main photo (image_url always mirrors it), the next slots are the extra photos.
+    image_rows: Mapped[list["ProductImage"]] = relationship(cascade="all, delete-orphan", order_by="ProductImage.sort_order")
     __table_args__ = (Index("ix_products_cat", "category_id", "sort_order"),)
+
+    @property
+    def images(self) -> list[str]:
+        """Every photo of the product, in slot order. A product that only has the old single image_url still shows it."""
+        urls = [r.url for r in self.image_rows]
+        return urls or ([self.image_url] if self.image_url else [])
+
+    def set_images(self, urls: list[str]) -> None:
+        """Replace all photo slots with `urls` (in order) and keep image_url pointing at the first one."""
+        self.image_rows = [ProductImage(url=u, sort_order=i) for i, u in enumerate(urls)]
+        self.image_url = urls[0] if urls else None
+
+
+class ProductImage(Base):
+    """One photo slot of a product (WebP, stored under /media/products). sort_order 0 is the main photo."""
+    __tablename__ = "product_images"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    url: Mapped[str] = mapped_column(String(500))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class AppMeta(Base):
+    """Tiny key/value store for the app's own bookkeeping (e.g. which version of the menu file was last imported)."""
+    __tablename__ = "app_meta"
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value: Mapped[str] = mapped_column(String(200))
 
 
 class Variant(Base):
@@ -87,14 +118,16 @@ class BusinessSettings(Base):
     min_order_value: Mapped[int] = mapped_column(Integer, default=0)
     tax_percent: Mapped[int] = mapped_column(Integer, default=0)  # added on top of (subtotal - discount)
     cod_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    easypaisa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
-    easypaisa_name: Mapped[str | None] = mapped_column(String(80))
-    easypaisa_number: Mapped[str | None] = mapped_column(String(30))
+    easypaisa_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    easypaisa_name: Mapped[str | None] = mapped_column(String(80), default=lambda: _cfg.easypaisa_account_name)
+    easypaisa_number: Mapped[str | None] = mapped_column(String(30), default=lambda: _cfg.easypaisa_number)
     bank_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     bank_name: Mapped[str | None] = mapped_column(String(80))
     bank_account_title: Mapped[str | None] = mapped_column(String(80))
     bank_account_number: Mapped[str | None] = mapped_column(String(40))
     bank_iban: Mapped[str | None] = mapped_column(String(40))
+    shop_latitude: Mapped[float | None] = mapped_column(Float)  # where delivery distance is measured from
+    shop_longitude: Mapped[float | None] = mapped_column(Float)
 
 
 class Order(Base):
@@ -102,7 +135,7 @@ class Order(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     order_number: Mapped[str] = mapped_column(String(30), unique=True)
     idempotency_key: Mapped[str] = mapped_column(String(80), unique=True)
-    status: Mapped[str] = mapped_column(String(30), default="PENDING_CONFIRMATION", index=True)
+    status: Mapped[str] = mapped_column(String(30), default="PENDING", index=True)  # PENDING | COMPLETED | CANCELLED
     customer_name: Mapped[str] = mapped_column(String(120))
     customer_phone: Mapped[str] = mapped_column(String(30), index=True)
     customer_email: Mapped[str | None] = mapped_column(String(160))
@@ -114,10 +147,15 @@ class Order(Base):
     delivery_charge: Mapped[int] = mapped_column(Integer, default=0)
     discount_total: Mapped[int] = mapped_column(Integer, default=0)
     tax_total: Mapped[int] = mapped_column(Integer, default=0)
-    delivery_zone: Mapped[str | None] = mapped_column(String(80))  # snapshot of the zone name
+    delivery_zone: Mapped[str | None] = mapped_column(String(80))  # snapshot of the distance band, e.g. "2-3 km"
+    delivery_distance_km: Mapped[float | None] = mapped_column(Float)
+    latitude: Mapped[float | None] = mapped_column(Float)  # customer's map pin
+    longitude: Mapped[float | None] = mapped_column(Float)
     total: Mapped[int] = mapped_column(Integer)
     coupon_code: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
     payment: Mapped["Payment"] = relationship(back_populates="order", uselist=False, cascade="all, delete-orphan")
 
@@ -140,10 +178,11 @@ class Payment(Base):
     __tablename__ = "payments"
     id: Mapped[int] = mapped_column(primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), unique=True)
-    method: Mapped[str] = mapped_column(String(20))  # COD | EASYPAISA | BANK_TRANSFER | GATEWAY
+    method: Mapped[str] = mapped_column(String(20))  # COD | EASYPAISA
+    # COD: UNPAID -> PAID (cash collected).  EASYPAISA: AWAITING_PAYMENT -> PENDING_VERIFICATION -> PAID (or FAILED)
     status: Mapped[str] = mapped_column(String(25), default="UNPAID")
     amount: Mapped[int] = mapped_column(Integer)
-    transaction_ref: Mapped[str | None] = mapped_column(String(120))
+    transaction_ref: Mapped[str | None] = mapped_column(String(120), unique=True)  # one Easypaisa TID can pay only one order
     receipt_path: Mapped[str | None] = mapped_column(String(300))
     admin_note: Mapped[str | None] = mapped_column(String(300))
     order: Mapped[Order] = relationship(back_populates="payment")
@@ -171,14 +210,3 @@ class NotificationLog(Base):
     error: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
-class DeliveryZone(Base):
-    __tablename__ = "delivery_zones"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(80))
-    city: Mapped[str] = mapped_column(String(80))
-    charge: Mapped[int] = mapped_column(Integer, default=0)
-    free_above: Mapped[int | None] = mapped_column(Integer)  # subtotal at or above this ships free
-    min_order: Mapped[int | None] = mapped_column(Integer)  # overrides the global minimum
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
