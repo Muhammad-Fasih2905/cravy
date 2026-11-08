@@ -75,7 +75,7 @@ export const api = createApi({
       return h;
     },
   }),
-  tagTypes: ["Menu", "Settings", "Orders", "Stats", "AdminSettings", "AdminProducts", "Options"],
+  tagTypes: ["Menu", "Settings", "Orders", "Stats", "AdminSettings", "AdminProducts", "Options", "AdminCategories"],
   keepUnusedDataFor: 300,
   endpoints: (b) => ({
     getMenu: b.query<Menu, void>({ query: () => "/api/menu", providesTags: ["Menu"] }),
@@ -123,7 +123,10 @@ export const api = createApi({
       query: ({ id, ...body }) => ({ url: `/api/admin/products/${id}`, method: "PATCH", body }),
       invalidatesTags: ["AdminProducts", "Menu"], onQueryStarted: announce,
     }),
-    adminCategories: b.query<{ id: number; name: string }[], void>({ query: () => "/api/admin/categories" }),
+    adminCategories: b.query<{ id: number; name: string }[], void>({ query: () => "/api/admin/categories", providesTags: ["AdminCategories"] }),
+    adminCreateCategory: b.mutation<{ id: number; name: string; slug: string; created: boolean }, { name: string }>({
+      query: (body) => ({ url: "/api/admin/categories", method: "POST", body }), invalidatesTags: ["AdminCategories", "Menu"],
+    }),
     adminCreateProduct: b.mutation<{ id: number }, { name: string; category_id: number; base_price: number }>({
       query: (body) => ({ url: "/api/admin/products", method: "POST", body }), invalidatesTags: ["AdminProducts", "Menu"], onQueryStarted: announce,
     }),
@@ -152,7 +155,7 @@ export const upsertAdminOrder = (o: AdminOrder) =>
 export const {
   useGetDeliveryRatesQuery,
   useAdminOptionsQuery, useAdminSaveOptionsMutation,
-  useAdminCategoriesQuery, useAdminCreateProductMutation, useAdminDeleteProductMutation,
+  useAdminCategoriesQuery, useAdminCreateCategoryMutation, useAdminCreateProductMutation, useAdminDeleteProductMutation,
   useGetPaymentMethodsQuery, useGetMenuQuery, useGetSettingsQuery, useGetProductQuery, useGetQuoteMutation, useCreateOrderMutation,
   useAdminLoginMutation, useAdminStatsQuery, useAdminOrdersQuery, useAdminSetStatusMutation, useAdminSetPaymentMutation,
   useAdminSettingsQuery, useAdminSaveSettingsMutation, useAdminProductsQuery, useAdminPatchProductMutation,

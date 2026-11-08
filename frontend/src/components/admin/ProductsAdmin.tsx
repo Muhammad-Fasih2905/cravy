@@ -5,7 +5,7 @@ import { FiChevronDown, FiImage, FiPlus, FiSave, FiSearch, FiSliders, FiTrash2, 
 import { formatPKR } from "@/lib/money";
 import { applyDiscount } from "@/lib/pricing";
 import {
-  api, useAdminCategoriesQuery, useAdminCreateProductMutation, useAdminDeleteProductMutation, useAdminOptionsQuery,
+  api, useAdminCategoriesQuery, useAdminCreateCategoryMutation, useAdminCreateProductMutation, useAdminDeleteProductMutation, useAdminOptionsQuery,
   useAdminPatchProductMutation, useAdminProductsQuery, useAdminSaveOptionsMutation, useGetMenuQuery,
   type AdminProduct, type OptionRow, type ProductPatch,
 } from "@/store/api";
@@ -140,6 +140,9 @@ function NewProduct({ onClose }: { onClose: () => void }) {
   const dispatch = useAppDispatch();
   const { data: cats = [] } = useAdminCategoriesQuery();
   const [create, { isLoading: creating }] = useAdminCreateProductMutation();
+  const [addCategory, { isLoading: addingCat }] = useAdminCreateCategoryMutation();
+  const [newCat, setNewCat] = useState<string | null>(null); // null = the "new category" box is closed
+  const [catErr, setCatErr] = useState("");
   const [patch] = useAdminPatchProductMutation();
   const [saveOptions] = useAdminSaveOptionsMutation();
   const empty = { name: "", price: "", cat: "", discount: "", description: "", bestseller: false, featured: false, available: true };
@@ -149,6 +152,16 @@ function NewProduct({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(""); const [ok, setOk] = useState("");
   const catId = Number(f.cat || cats[0]?.id);
+
+  async function makeCategory() {
+    const name = (newCat ?? "").trim(); setCatErr("");
+    if (name.length < 2) { setCatErr("Type the category name (at least 2 letters)."); return; }
+    try {
+      const c = await addCategory({ name }).unwrap();
+      setF((cur) => ({ ...cur, cat: String(c.id) })); // the product goes into the category just added
+      setNewCat(null);
+    } catch (x) { setCatErr(apiError(x)); }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setErr(""); setOk(""); setBusy(true);
@@ -186,7 +199,19 @@ function NewProduct({ onClose }: { onClose: () => void }) {
           <div className="flex flex-wrap items-end gap-3">
             <label className="min-w-[200px] flex-1 text-sm">Product name<input required maxLength={120} className={input} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
             <Select label="Category" value={f.cat || String(cats[0]?.id ?? "")} onChange={(v) => setF({ ...f, cat: v })} options={cats.map((c) => ({ value: String(c.id), label: c.name }))} />
+            <button type="button" className="btn-secondary min-h-[44px] gap-2 px-4 text-sm" onClick={() => { setNewCat(newCat === null ? "" : null); setCatErr(""); }}><FiPlus aria-hidden />New category</button>
           </div>
+          {newCat !== null && (
+            <div className="rounded-xl bg-vanilla/60 p-3">
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="min-w-[200px] flex-1 text-sm">New category name<input autoFocus maxLength={80} className={input} placeholder="e.g. Waffles" value={newCat}
+                  onChange={(e) => setNewCat(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); makeCategory(); } }} /></label>
+                <button type="button" className="btn-primary min-h-[44px] px-5" disabled={addingCat} onClick={makeCategory}>{addingCat ? "Adding…" : "Add category"}</button>
+              </div>
+              {catErr && <p role="alert" className="mt-2 text-sm text-strawberry">{catErr}</p>}
+              <p className="mt-2 text-xs">It is added to the menu and selected above. Customers see it under "More" once it has a product.</p>
+            </div>
+          )}
           <label className="block text-sm">Description<textarea rows={3} className={`${input} py-3`} placeholder="What is it made of? Shown on the product card." value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></label>
           <div className="flex flex-wrap items-start gap-3">
             <label className="text-sm">Price (PKR)<input required type="number" min={0} inputMode="numeric" className={`${input} w-32`} value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></label>
