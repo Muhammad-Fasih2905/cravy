@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FiChevronDown, FiImage, FiPlus, FiSave, FiSearch, FiSliders, FiTrash2, FiX } from "react-icons/fi";
+import { FiArrowDown, FiArrowUp, FiChevronDown, FiImage, FiPlus, FiSave, FiSearch, FiSliders, FiTrash2, FiX } from "react-icons/fi";
 import { formatPKR } from "@/lib/money";
 import { applyDiscount } from "@/lib/pricing";
 import {
-  api, useAdminCategoriesQuery, useAdminCreateCategoryMutation, useAdminCreateProductMutation, useAdminDeleteProductMutation, useAdminOptionsQuery,
+  api, useAdminCategoriesQuery, useAdminCreateCategoryMutation, useAdminCreateProductMutation, useAdminDeleteProductMutation, useAdminOptionsQuery, useAdminBundleQuery, useAdminSaveBundleMutation,
   useAdminPatchProductMutation, useAdminProductsQuery, useAdminSaveOptionsMutation, useGetMenuQuery,
   type AdminProduct, type OptionRow, type ProductPatch,
 } from "@/store/api";
@@ -129,6 +129,72 @@ function OptionsEditor({ id }: { id: number }) {
             <div className="md:col-span-2"><button className="btn-primary min-h-[44px] px-5" disabled={isLoading}>{isLoading ? "Saving…" : "Save sizes & toppings"}</button>
               {isSuccess && <span role="status" className="ml-3">Saved</span>}{msg && <span role="alert" className="ml-3 text-strawberry">{msg}</span>}</div>
           </motion.form>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ------------------------------------------- "Frequently bought together" (existing product) */
+function BundleEditor({ p }: { p: AdminProduct }) {
+  const [open, setOpen] = useState(false);
+  const { data } = useAdminBundleQuery(p.id, { skip: !open });
+  const { data: all = [] } = useAdminProductsQuery(undefined, { skip: !open });
+  const [save, { isLoading }] = useAdminSaveBundleMutation();
+  const [ids, setIds] = useState<number[]>([]);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => { if (data) setIds(data.product_ids); }, [data]);
+  const byId = useMemo(() => new Map(all.map((x) => [x.id, x])), [all]);
+  const choices = useMemo(() => {
+    const groups = new Map<string, AdminProduct[]>();
+    all.filter((x) => x.id !== p.id && !ids.includes(x.id)).forEach((x) => groups.set(x.category, [...(groups.get(x.category) ?? []), x]));
+    return Array.from(groups.entries());
+  }, [all, ids, p.id]);
+  const dirty = !data || ids.join(",") !== data.product_ids.join(",");
+  const move = (i: number, d: number) => setIds((c) => { const n = [...c]; const j = i + d; if (j < 0 || j >= n.length) return c; [n[i], n[j]] = [n[j], n[i]]; return n; });
+
+  async function submit() {
+    setMsg(null);
+    try { await save({ id: p.id, product_ids: ids }).unwrap(); setMsg({ ok: true, text: "Saved. Customers see it within a few seconds." }); }
+    catch (e) { setMsg({ ok: false, text: apiError(e) }); }
+  }
+  return (
+    <div>
+      <button type="button" className="chip min-h-[40px] gap-2 px-4" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <FiPlus aria-hidden />Frequently bought together{data && data.product_ids.length > 0 ? ` (${data.product_ids.length})` : ""}
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="mt-3 overflow-hidden">
+            <p className="mb-3 text-sm">Items shown under <strong>{p.name}</strong> with their picture and price. A customer can tick them and they are added to the cart together. You can pick any product from any menu (up to 8).</p>
+            <ul className="mb-3 space-y-2">
+              {ids.length === 0 && <li className="text-sm opacity-70">Nothing added yet.</li>}
+              {ids.map((id, i) => {
+                const x = byId.get(id) ?? data?.items.find((it) => it.id === id);
+                return (
+                  <li key={id} className="flex items-center gap-3 rounded-2xl bg-white p-2 ring-1 ring-vanilla-deep">
+                    <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-vanilla">
+                      {x?.image_url && /* eslint-disable-next-line @next/next/no-img-element */ <img src={imgSrc(x.image_url)} alt="" className="h-full w-full object-cover" />}
+                    </span>
+                    <span className="min-w-0 flex-1 text-sm"><strong className="block truncate">{x?.name ?? `Product ${id}`}</strong>
+                      <span className="opacity-70">{x && "category" in x && x.category ? `${x.category} · ` : ""}{x ? formatPKR("base_price" in x ? x.base_price : x.price) : ""}</span></span>
+                    <button type="button" aria-label="Move up" disabled={i === 0} className="grid h-9 w-9 place-items-center rounded-full hover:bg-vanilla disabled:opacity-30" onClick={() => move(i, -1)}><FiArrowUp /></button>
+                    <button type="button" aria-label="Move down" disabled={i === ids.length - 1} className="grid h-9 w-9 place-items-center rounded-full hover:bg-vanilla disabled:opacity-30" onClick={() => move(i, 1)}><FiArrowDown /></button>
+                    <button type="button" aria-label={`Remove ${x?.name ?? "item"}`} className="grid h-9 w-9 place-items-center rounded-full text-strawberry hover:bg-strawberry/10" onClick={() => setIds((c) => c.filter((v) => v !== id))}><FiX /></button>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="flex flex-wrap items-center gap-3">
+              <select aria-label="Add a product" className={`${input} sm:w-72`} value="" disabled={ids.length >= 8 || choices.length === 0}
+                onChange={(e) => { const v = Number(e.target.value); if (v) { setIds((c) => [...c, v]); setMsg(null); } }}>
+                <option value="">{ids.length >= 8 ? "Maximum 8 items" : "+ Add a product…"}</option>
+                {choices.map(([cat, list]) => <optgroup key={cat} label={cat}>{list.map((x) => <option key={x.id} value={x.id}>{x.name} · {formatPKR(x.base_price)}</option>)}</optgroup>)}
+              </select>
+              <button type="button" className="btn-primary min-h-[44px] gap-2 px-5 disabled:opacity-50" disabled={!dirty || isLoading} onClick={submit}><FiSave aria-hidden />{isLoading ? "Saving…" : "Save"}</button>
+              {msg && <span role={msg.ok ? "status" : "alert"} className={`text-sm ${msg.ok ? "" : "text-strawberry"}`}>{msg.text}</span>}
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
@@ -315,6 +381,7 @@ function ProductEditor({ p, menuDesc, menuLoaded }: { p: AdminProduct; menuDesc:
         </div>
       </div>
       <OptionsEditor id={p.id} />
+      <BundleEditor p={p} />
     </div>
   );
 }

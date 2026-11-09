@@ -36,6 +36,7 @@ export type ProductPatch = Partial<{
   name: string; description: string | null; base_price: number; is_available: boolean;
   is_bestseller: boolean; is_featured: boolean; discount_percent: number;
 }>;
+export type AdminBundle = { product_ids: number[]; items: { id: number; name: string; category: string | null; image_url: string | null; price: number; is_available: boolean }[] };
 export type OptionRow = { id?: number; name: string; price: number; is_available: boolean };
 export type ProductOptions = { variants: OptionRow[]; addons: OptionRow[] };
 export type AdminSettings = Record<string, string | number | boolean | null>;
@@ -75,7 +76,7 @@ export const api = createApi({
       return h;
     },
   }),
-  tagTypes: ["Menu", "Settings", "Orders", "Stats", "AdminSettings", "AdminProducts", "Options", "AdminCategories"],
+  tagTypes: ["Menu", "Settings", "Orders", "Stats", "AdminSettings", "AdminProducts", "Options", "AdminCategories", "Bundle"],
   keepUnusedDataFor: 300,
   endpoints: (b) => ({
     getMenu: b.query<Menu, void>({ query: () => "/api/menu", providesTags: ["Menu"] }),
@@ -133,6 +134,10 @@ export const api = createApi({
     adminDeleteProduct: b.mutation<unknown, number>({
       query: (id) => ({ url: `/api/admin/products/${id}`, method: "DELETE" }), invalidatesTags: ["AdminProducts", "Menu"], onQueryStarted: announce,
     }),
+    adminBundle: b.query<AdminBundle, number>({ query: (id) => `/api/admin/products/${id}/bundle`, providesTags: ["Bundle"] }),
+    adminSaveBundle: b.mutation<AdminBundle, { id: number; product_ids: number[] }>({
+      query: ({ id, ...body }) => ({ url: `/api/admin/products/${id}/bundle`, method: "PUT", body }), invalidatesTags: ["Bundle", "Menu"], onQueryStarted: announce,
+    }),
     adminOptions: b.query<ProductOptions, number>({ query: (id) => `/api/admin/products/${id}/options`, providesTags: ["Options"] }),
     adminSaveOptions: b.mutation<ProductOptions, { id: number } & ProductOptions>({
       query: ({ id, ...body }) => ({ url: `/api/admin/products/${id}/options`, method: "PUT", body }), invalidatesTags: ["Options", "Menu"], onQueryStarted: announce,
@@ -154,7 +159,7 @@ export const upsertAdminOrder = (o: AdminOrder) =>
 
 export const {
   useGetDeliveryRatesQuery,
-  useAdminOptionsQuery, useAdminSaveOptionsMutation,
+  useAdminOptionsQuery, useAdminSaveOptionsMutation, useAdminBundleQuery, useAdminSaveBundleMutation,
   useAdminCategoriesQuery, useAdminCreateCategoryMutation, useAdminCreateProductMutation, useAdminDeleteProductMutation,
   useGetPaymentMethodsQuery, useGetMenuQuery, useGetSettingsQuery, useGetProductQuery, useGetQuoteMutation, useCreateOrderMutation,
   useAdminLoginMutation, useAdminStatsQuery, useAdminOrdersQuery, useAdminSetStatusMutation, useAdminSetPaymentMutation,

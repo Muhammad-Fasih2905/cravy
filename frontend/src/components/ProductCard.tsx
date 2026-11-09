@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { FiPlus } from "react-icons/fi";
 import { useEffect, useMemo, useState } from "react";
 import { FaHeart, FaRegHeart } from "react-icons/fa";
+import { FiCheck } from "react-icons/fi";
 import type { Product } from "@/lib/types";
 import { formatPKR } from "@/lib/money";
 import { discountOf, finalBase, finalOfVariant } from "@/lib/pricing";
@@ -40,6 +41,12 @@ export function ProductCard({ p }: { p: Product }) {
   const addons = p.addons.filter((a) => a.is_available);
   const pickedIds = addonIds.filter((id) => addons.some((a) => a.id === id));
 
+  // "Frequently bought together": tick the extras and they go to the cart together with this item (each as its own line).
+  const bundle = p.bundle ?? [];
+  const [pickedBundle, setPickedBundle] = useState<number[]>([]);
+  const bundlePicked = bundle.filter((b) => pickedBundle.includes(b.id));
+  const bundleTotal = bundlePicked.reduce((sum, b) => sum + b.price, 0);
+
   const percent = discountOf(p);
   // Display price only; the server recalculates it at quote and checkout. The admin's discount applies to the size/base price, not to extras.
   const addonsTotal = addons.filter((a) => pickedIds.includes(a.id)).reduce((s, a) => s + a.price, 0);
@@ -48,6 +55,7 @@ export function ProductCard({ p }: { p: Product }) {
     [variant, p, addonsTotal],
   );
   const regularPrice = (variant?.price ?? p.base_price) + addonsTotal;
+  const shownPrice = price + bundleTotal; // with the ticked "bought together" items
 
   return (
     // Phones: a horizontal row (picture on the left, details on the right). From 640px: the vertical card.
@@ -95,20 +103,57 @@ export function ProductCard({ p }: { p: Product }) {
           </fieldset>
         )}
 
+        {bundle.length > 0 && (
+          <section aria-label="Frequently bought together" className="rounded-xl bg-vanilla/50 p-2.5 sm:p-3">
+            <h4 className="text-[0.8rem] font-extrabold uppercase tracking-wide text-forest sm:text-sm">Frequently bought together</h4>
+            <p className="mb-1.5 text-xs text-ink/60">Other customers also ordered these</p>
+            <ul className="space-y-1.5">
+              {bundle.map((b) => {
+                const on = pickedBundle.includes(b.id);
+                const src = b.image_url ? (b.image_url.startsWith("http") ? b.image_url : `${API}${b.image_url}`) : null;
+                return (
+                  <li key={b.id}>
+                    <label className={`flex min-h-[52px] cursor-pointer items-center gap-2.5 rounded-xl bg-white p-1.5 pr-2.5 ring-2 transition ${on ? "ring-forest" : "ring-transparent hover:ring-vanilla-deep"}`}>
+                      <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-vanilla to-mint sm:h-12 sm:w-12">
+                        {src ? <Image src={src} alt="" fill sizes="48px" className="object-cover" unoptimized={API.includes("localhost")} />
+                          : <span className="grid h-full place-items-center text-forest/40" aria-hidden><GiIceCreamCone size={22} /></span>}
+                      </span>
+                      <span className="min-w-0 flex-1 leading-tight">
+                        <span className="line-clamp-2 block text-[0.85rem] font-semibold text-ink sm:text-sm">{b.name}{b.variant_name ? ` (${b.variant_name})` : ""}</span>
+                        <span className="block text-xs font-bold text-forest">+{formatPKR(b.price)}</span>
+                      </span>
+                      <input type="checkbox" className="peer sr-only" checked={on}
+                        onChange={(e) => setPickedBundle((c) => (e.target.checked ? [...c, b.id] : c.filter((x) => x !== b.id)))} />
+                      <span aria-hidden className={`grid h-6 w-6 shrink-0 place-items-center rounded-md border-2 transition peer-focus-visible:ring-2 peer-focus-visible:ring-forest ${on ? "border-forest bg-forest text-cream" : "border-ink/30 bg-white"}`}>{on && <FiCheck size={16} />}</span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
         <div className="mt-auto flex flex-col gap-2.5 pt-1 sm:flex-row sm:items-center sm:justify-between sm:pt-2">
           {/* price: a coloured pill on phones, plain text from 640px */}
           <span className="flex items-baseline gap-2">
-            <strong className="inline-flex w-fit items-center rounded-lg bg-strawberry px-3 py-1.5 text-[1.05rem] font-extrabold leading-none text-cream sm:rounded-none sm:bg-transparent sm:p-0 sm:text-lg sm:font-bold sm:text-forest">{formatPKR(price)}</strong>
-            {percent > 0 && <s className="text-xs text-ink/60 sm:text-sm">{formatPKR(regularPrice)}</s>}
+            <strong className="inline-flex w-fit items-center rounded-lg bg-strawberry px-3 py-1.5 text-[1.05rem] font-extrabold leading-none text-cream sm:rounded-none sm:bg-transparent sm:p-0 sm:text-lg sm:font-bold sm:text-forest">{formatPKR(shownPrice)}</strong>
+            {percent > 0 && bundlePicked.length === 0 && <s className="text-xs text-ink/60 sm:text-sm">{formatPKR(regularPrice)}</s>}
           </span>
           <div className="flex items-center gap-1 sm:justify-between sm:gap-2">
             {p.is_available ? (
-              <motion.button whileTap={{ scale: 0.94 }} className="btn-primary min-h-[46px] min-w-0 gap-2 whitespace-nowrap px-5 max-sm:max-w-[11rem] max-sm:flex-1 max-sm:rounded-xl max-sm:px-3 max-sm:text-[0.92rem] sm:min-h-[48px]" onClick={() =>
+              <motion.button whileTap={{ scale: 0.94 }} className="btn-primary min-h-[46px] min-w-0 gap-2 whitespace-nowrap px-5 max-sm:max-w-[11rem] max-sm:flex-1 max-sm:rounded-xl max-sm:px-3 max-sm:text-[0.92rem] sm:min-h-[48px]" onClick={() => {
                 dispatch(addItem({
                   product_id: p.id, variant_id: variant?.id ?? null, addon_ids: pickedIds, quantity: 1,
                   name: p.name, variantName: variant?.name ?? null,
                   addonNames: addons.filter((a) => pickedIds.includes(a.id)).map((a) => a.name), unitPrice: price,
-                }))}>
+                }));
+                // the ticked "bought together" items are ordinary cart lines; the server prices each of them again
+                bundlePicked.forEach((b) => dispatch(addItem({
+                  product_id: b.id, variant_id: b.variant_id, addon_ids: [], quantity: 1,
+                  name: b.name, variantName: b.variant_name, addonNames: [], unitPrice: b.price,
+                })));
+                if (bundlePicked.length) setPickedBundle([]);
+              }}>
                 <FiPlus aria-hidden className="hidden sm:block" /><span className="sm:hidden">Add To Cart</span><span className="hidden sm:inline">Add</span>
               </motion.button>
             ) : <span className="chip">Out of stock</span>}
