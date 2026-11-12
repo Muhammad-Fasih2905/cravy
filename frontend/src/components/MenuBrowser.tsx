@@ -77,7 +77,7 @@ export function MenuBrowser({ onlyFeatured = false }: { onlyFeatured?: boolean }
 
       {/* Category tabs: underlined text tabs on phones, pills from tablet up */}
       <div role="tablist" aria-label="Categories"
-        className="-mx-5 mb-5 flex overflow-x-auto border-b border-ink/10 px-5 sm:mx-0 sm:mb-6 sm:gap-2 sm:border-0 sm:px-0 sm:pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        className="-mx-5 mb-5 flex overflow-x-auto border-b border-ink/10 px-5 sm:mx-0 sm:mb-6 sm:flex-wrap sm:gap-2 sm:overflow-visible sm:border-0 sm:px-0 sm:pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {[{ slug: "all", name: "All" }, ...categories].map((c) => {
           const on = cat === c.slug;
           return (
