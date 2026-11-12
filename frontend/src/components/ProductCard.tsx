@@ -1,5 +1,5 @@
 "use client";
-import Image from "next/image";
+import Image, { type StaticImageData } from "next/image";
 import Link from "next/link";
 import { GiIceCreamCone } from "react-icons/gi";
 import { motion } from "framer-motion";
@@ -13,6 +13,8 @@ import { discountOf, finalBase, finalOfVariant } from "@/lib/pricing";
 import { useAppDispatch } from "@/store/hooks";
 import { addItem } from "@/store/cartSlice";
 import { PUBLIC_API as API } from "@/lib/config";
+import { useGetMenuQuery } from "@/store/api";
+import { isWaffleCategory, isWaffleTopping, toppingKey, WAFFLE_TOPPING_LIST } from "@/config/waffleFlavours";
 
 
 /** Hearted products are remembered in this browser only (a per-visitor convenience; it never reaches the server). */
@@ -40,6 +42,21 @@ export function ProductCard({ p }: { p: Product }) {
   const variant = variants.find((v) => v.id === variantId) ?? variants[0] ?? null;
   const addons = p.addons.filter((a) => a.is_available);
   const pickedIds = addonIds.filter((id) => addons.some((a) => a.id === id));
+  // Free waffle toppings (Vanilla Cream Waffle, Strawberry Velvet...): shown as picture tiles inside every waffle card. They come from
+  // the products of those names (picture + title), cost nothing, and are sent to the kitchen with the order. Nothing to set up in the admin.
+  const { data: menu } = useGetMenuQuery();
+  const inWaffleMenu = !!menu?.categories.some((c) => (isWaffleCategory(c.slug) || isWaffleCategory(c.name)) && c.products.some((x) => x.id === p.id));
+  const toppings = useMemo(() => {
+    if (!inWaffleMenu || isWaffleTopping(p.name)) return [];
+    const all = (menu?.categories ?? []).flatMap((c) => c.products);
+    return WAFFLE_TOPPING_LIST.map((t) => {
+      const own = all.find((x) => toppingKey(x.name) === toppingKey(t.name))?.image_url; // fallback: the product's own picture
+      const image: StaticImageData | string | null = t.image ?? (own ? (own.startsWith("http") ? own : `${API}${own}`) : null);
+      return { name: t.name, image };
+    });
+  }, [menu, inWaffleMenu, p.name]);
+  const [pickedToppings, setPickedToppings] = useState<string[]>([]);
+  const [mainBroken, setMainBroken] = useState(false); // a photo file that is missing on the server shows the placeholder, not a broken image
 
   // "Frequently bought together": tick the extras and they go to the cart together with this item (each as its own line).
   const bundle = p.bundle ?? [];
@@ -63,8 +80,8 @@ export function ProductCard({ p }: { p: Product }) {
       className="card flex gap-3.5 rounded-[1.25rem] p-3 hover:shadow-lift sm:flex-col sm:gap-3 sm:rounded-card sm:p-5">
       <div className="relative aspect-square w-[38%] max-w-[11rem] shrink-0 self-start overflow-hidden rounded-xl bg-gradient-to-br from-vanilla to-mint sm:-mx-5 sm:-mt-5 sm:mb-1 sm:aspect-square sm:w-auto sm:max-w-none sm:self-stretch sm:rounded-b-none sm:rounded-t-card">
         {percent > 0 && <span className="absolute left-2 top-2 z-10 rounded-pill bg-strawberry px-2 py-0.5 text-[11px] font-extrabold text-cream shadow-card sm:left-3 sm:top-3 sm:px-3 sm:py-1 sm:text-sm">{percent}% OFF</span>}
-        {p.image_url ? (
-          <Image src={p.image_url.startsWith("http") ? p.image_url : `${API}${p.image_url}`} alt={p.name} fill sizes="(max-width: 640px) 38vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 480px" quality={85} className="object-cover object-center" unoptimized={API.includes("localhost")} />
+        {p.image_url && !mainBroken ? (
+          <Image onError={() => setMainBroken(true)} src={p.image_url.startsWith("http") ? p.image_url : `${API}${p.image_url}`} alt={p.name} fill sizes="(max-width: 640px) 38vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 480px" quality={85} className="object-cover object-center" unoptimized={API.includes("localhost")} />
         ) : (
           <div className="grid h-full place-items-center text-forest/40" aria-hidden><GiIceCreamCone size={48} /></div>
         )}
@@ -100,6 +117,29 @@ export function ProductCard({ p }: { p: Product }) {
                 {a.name} +{formatPKR(a.price)}
               </label>
             ))}
+          </fieldset>
+        )}
+        {toppings.length > 0 && (
+          <fieldset>
+            <legend className="mb-1.5 text-[0.8rem] font-extrabold uppercase tracking-wide text-forest sm:text-sm">Toppings <span className="font-semibold normal-case tracking-normal text-ink/60">· free, pick any</span></legend>
+            <div className="grid grid-cols-3 gap-2">
+              {toppings.map((t) => {
+                const on = pickedToppings.includes(t.name);
+                return (
+                  <label key={t.name} className={`relative flex cursor-pointer flex-col gap-1 rounded-xl bg-white p-1 text-center ring-2 transition ${on ? "ring-forest" : "ring-vanilla-deep/70 hover:ring-forest/40"}`}>
+                    <input type="checkbox" className="peer sr-only" checked={on} onChange={(e) => setPickedToppings((c) => (e.target.checked ? [...c, t.name] : c.filter((x) => x !== t.name)))} />
+                    <span className="relative block aspect-square w-full overflow-hidden rounded-lg bg-gradient-to-br from-vanilla to-mint peer-focus-visible:ring-2 peer-focus-visible:ring-forest">
+                      {t.image ? <Image src={t.image} alt="" fill sizes="96px" className="object-cover" unoptimized={typeof t.image === "string" && t.image.startsWith(API) && API.includes("localhost")}
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }} />
+                        : <span className="grid h-full place-items-center text-forest/40" aria-hidden><GiIceCreamCone size={22} /></span>}
+                      {on && <span aria-hidden className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-forest text-cream"><FiCheck size={13} /></span>}
+                    </span>
+                    <span className="line-clamp-2 min-h-[2.1em] px-0.5 text-[0.72rem] font-semibold leading-tight text-ink sm:text-xs">{t.name}</span>
+                    <span className="pb-0.5 text-[0.7rem] font-bold text-forest">Free</span>
+                  </label>
+                );
+              })}
+            </div>
           </fieldset>
         )}
 
@@ -146,7 +186,9 @@ export function ProductCard({ p }: { p: Product }) {
                   product_id: p.id, variant_id: variant?.id ?? null, addon_ids: pickedIds, quantity: 1,
                   name: p.name, variantName: variant?.name ?? null,
                   addonNames: addons.filter((a) => pickedIds.includes(a.id)).map((a) => a.name), unitPrice: price,
+                  freeToppings: toppings.filter((t) => pickedToppings.includes(t.name)).map((t) => t.name),
                 }));
+                if (pickedToppings.length) setPickedToppings([]);
                 // the ticked "bought together" items are ordinary cart lines; the server prices each of them again
                 bundlePicked.forEach((b) => dispatch(addItem({
                   product_id: b.id, variant_id: b.variant_id, addon_ids: [], quantity: 1,

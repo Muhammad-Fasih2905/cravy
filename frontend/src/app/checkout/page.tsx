@@ -14,6 +14,15 @@ import { clear } from "@/store/cartSlice";
 type Method = OrderInput["payment_method"];
 const field = "min-h-[48px] w-full rounded-2xl border-2 border-vanilla-deep bg-white px-4 focus-visible:border-forest";
 
+/** The free waffle toppings go to the kitchen in the order's instructions (the server allows 300 characters; the toppings come first, the customer's own note is trimmed to fit). */
+function withToppings(items: { name: string; quantity: number; freeToppings?: string[] }[], notes: string): string | null {
+  const t = items.filter((i) => i.freeToppings?.length).map((i) => `${i.name} x${i.quantity}: ${i.freeToppings!.join(", ")}`).join("; ");
+  const head = t ? `Toppings - ${t}` : "";
+  const n = notes.trim();
+  const out = head && n ? `${head}. Note: ${n}` : head || n;
+  return out ? out.slice(0, 300) : null;
+}
+
 export default function CheckoutPage() {
   const router = useRouter();
   const dispatch = useAppDispatch();
@@ -109,7 +118,7 @@ export default function CheckoutPage() {
           items: items.map(({ product_id, variant_id, addon_ids, quantity }) => ({ product_id, variant_id, addon_ids, quantity })),
           latitude: loc!.latitude, longitude: loc!.longitude, coupon_code: coupon, customer_name: f.name.trim(), customer_phone: f.phone.trim(), customer_email: f.email.trim() || null,
           city: f.city.trim(), address: deliveryAddress(), landmark: f.landmark.trim() || null,
-          instructions: f.notes.trim() || null, payment_method: method,
+          instructions: withToppings(items, f.notes), payment_method: method,
         },
       }).unwrap();
       try { sessionStorage.setItem(`cravy-phone-${res.order_number}`, f.phone.trim()); } catch { /* private mode: the order page asks for the phone */ }

@@ -14,6 +14,7 @@ import { PUBLIC_API as API } from "@/lib/config";
 import { announceMenuChange } from "@/lib/menuSync";
 import { confirmToast } from "@/lib/notify";
 import { Select } from "../Select";
+import { isHiddenWaffleTopping } from "@/config/waffleFlavours";
 
 const input = "min-h-[44px] w-full rounded-2xl border-2 border-vanilla-deep bg-white px-4";
 const authHeader = () => ({ authorization: `Bearer ${sessionStorage.getItem("cravy-admin") ?? ""}` });
@@ -459,7 +460,9 @@ const STATUS: [Status, string, (p: AdminProduct) => boolean][] = [
 const PAGE = 20;
 
 export function ProductsAdmin() {
-  const { data = [], isLoading, isError, refetch } = useAdminProductsQuery();
+  const { data: allProducts = [], isLoading, isError, refetch } = useAdminProductsQuery();
+  // the free waffle toppings (Vanilla Cream Waffle, Strawberry Velvet...) are not managed here
+  const data = useMemo(() => allProducts.filter((p) => !isHiddenWaffleTopping(p.category, p.name)), [allProducts]);
   const { data: menu } = useGetMenuQuery();
   const [q, setQ] = useState(""); const [cat, setCat] = useState("all");
   const [status, setStatus] = useState<Status>("all"); const [sort, setSort] = useState<Sort>("menu");

@@ -83,7 +83,7 @@ export function CartDrawer() {
                   <ul className="space-y-3">
                     <AnimatePresence initial={false}>
                       {items.map((i) => {
-                        const detail = [i.variantName, ...i.addonNames].filter(Boolean).join(", ");
+                        const detail = [i.variantName, ...i.addonNames, ...(i.freeToppings?.length ? [`Toppings: ${i.freeToppings.join(", ")}`] : [])].filter(Boolean).join(", ");
                         return (
                           <motion.li key={i.key} layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, x: 40 }} className="card p-3.5 sm:p-4">
                             <div className="flex items-start gap-3">

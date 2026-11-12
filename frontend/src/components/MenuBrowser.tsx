@@ -6,6 +6,7 @@ import { ProductCard } from "./ProductCard";
 import { Select } from "./Select";
 import { startingPrice } from "@/lib/pricing";
 import { groupCategories } from "@/config/menuGroups";
+import { isHiddenWaffleTopping } from "@/config/waffleFlavours";
 import type { Category, Product } from "@/lib/types";
 
 type Sort = "menu" | "low" | "high";
@@ -15,7 +16,7 @@ const order = (list: Product[], sort: Sort) =>
 
 /** The grid of product cards: one column list on phones (picture on the side), 2 / 3 columns from tablet up. */
 const Grid = ({ items }: { items: Product[] }) => (
-  <div className="grid gap-3 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">{items.map((p) => <ProductCard key={p.id} p={p} />)}</div>
+  <div className="grid items-start gap-3 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">{items.map((p) => <ProductCard key={p.id} p={p} />)}</div>
 );
 
 export function MenuBrowser({ onlyFeatured = false }: { onlyFeatured?: boolean }) {
@@ -38,7 +39,8 @@ export function MenuBrowser({ onlyFeatured = false }: { onlyFeatured?: boolean }
 
   // "All": every menu heading with its own products under it. A single category: just that category.
   const sections = useMemo(() => {
-    const visible = (c: Category) => order(c.products.filter((p) => p.name.toLowerCase().includes(needle)), sort);
+    // In the Waffle menu the topping products (Vanilla Cream Waffle, Strawberry Velvet...) are not cards: they show inside each waffle.
+    const visible = (c: Category) => order(c.products.filter((p) => p.name.toLowerCase().includes(needle) && !(isHiddenWaffleTopping(c.slug, p.name) || isHiddenWaffleTopping(c.name, p.name))), sort);
     if (cat !== "all") {
       const c = categories.find((x) => x.slug === cat);
       const items = c ? visible(c) : [];

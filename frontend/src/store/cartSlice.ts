@@ -5,9 +5,12 @@ export type CartItem = CartLineInput & {
   key: string; // product + variant + addons, so identical selections merge
   name: string; variantName: string | null; addonNames: string[];
   unitPrice: number; // display only; the server recalculates every price
+  /** Free waffle toppings the customer picked (names). Not a priced extra: they reach the kitchen in the order's delivery instructions. */
+  freeToppings?: string[];
 };
 
-const keyOf = (l: CartLineInput) => `${l.product_id}:${l.variant_id ?? 0}:${[...l.addon_ids].sort().join(",")}`;
+const keyOf = (l: CartLineInput & { freeToppings?: string[] }) =>
+  `${l.product_id}:${l.variant_id ?? 0}:${[...l.addon_ids].sort().join(",")}:${[...(l.freeToppings ?? [])].sort().join("|")}`;
 
 const slice = createSlice({
   name: "cart",
