@@ -13,7 +13,7 @@ import { ProductsAdmin } from "./ProductsAdmin";
 import { AdminLogo } from "../brand/AdminLogo";
 import { DeliveryRates } from "../DeliveryRates";
 import { confirmToast } from "@/lib/notify";
-import { openReceipt, printSlip } from "@/lib/adminFetch";
+import { fetchReceiptBlob, openReceipt, printSlip } from "@/lib/adminFetch";
 import { useOrderStream, type StreamState } from "@/lib/useOrderStream";
 
 const PAY = ["UNPAID", "AWAITING_PAYMENT", "PENDING_VERIFICATION", "PAID", "FAILED", "REFUNDED"];
@@ -185,6 +185,39 @@ function Orders({ filter, setFilter }: { filter: OrderTab; setFilter: (f: OrderT
   );
 }
 
+/** Shows the customer's payment screenshot inside the order card (images only; a PDF opens with "View receipt"). */
+function ReceiptInline({ n }: { n: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [state, setState] = useState<"idle" | "loading" | "error" | "pdf">("idle");
+  useEffect(() => () => { if (src) URL.revokeObjectURL(src); }, [src]);
+  async function show() {
+    setState("loading");
+    try {
+      const b = await fetchReceiptBlob(n);
+      if (!b.type.startsWith("image/")) return setState("pdf");
+      setSrc(URL.createObjectURL(b));
+      setState("idle");
+    } catch { setState("error"); }
+  }
+  if (src)
+    return (
+      <div className="space-y-2">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={`Payment screenshot for ${n}`} className="max-h-[420px] w-full rounded-2xl border-2 border-vanilla-deep bg-white object-contain" />
+        <button className="text-xs font-bold underline" onClick={() => setSrc(null)}>Hide screenshot</button>
+      </div>
+    );
+  return (
+    <div>
+      <button className="btn-secondary min-h-[40px] gap-2 px-4" disabled={state === "loading"} onClick={show}>
+        <FiFileText aria-hidden />{state === "loading" ? "Loading…" : "Show screenshot here"}
+      </button>
+      {state === "error" && <p role="alert" className="mt-1 text-sm text-strawberry">Could not load the screenshot. Please log in again and retry.</p>}
+      {state === "pdf" && <p className="mt-1 text-sm">This receipt is a PDF. Use “View receipt” to open it.</p>}
+    </div>
+  );
+}
+
 const STATUS_STYLE: Record<string, string> = { PENDING: "bg-mango/40", COMPLETED: "bg-mint/60", CANCELLED: "bg-strawberry/15 text-strawberry" };
 
 function OrderCard({ o }: { o: AdminOrder }) {
@@ -208,6 +241,10 @@ function OrderCard({ o }: { o: AdminOrder }) {
     try { await setStatus({ n: o.order_number, status }).unwrap(); } catch (e) { setErr(apiError(e)); }
   }
   async function pay(status: string) {
+    if (status === "PAID" && o.payment_status !== "PAID") {
+      const sure = await confirmToast(`Confirm ${formatPKR(o.total)} for ${o.order_number} is in your Easypaisa account?\n\nThe customer will see "Payment confirmed".`, { confirmLabel: "Yes, received", cancelLabel: "Not yet" });
+      if (!sure) return;
+    }
     setErr("");
     try { await setPayment({ n: o.order_number, status, note }).unwrap(); } catch (e) { setErr(apiError(e)); }
   }
@@ -217,7 +254,7 @@ function OrderCard({ o }: { o: AdminOrder }) {
       <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 font-bold">
         <span className="font-mono">{o.order_number}</span><span>{o.customer_name}</span><span>{formatPKR(o.total)}</span>
         <span className={`chip ${STATUS_STYLE[o.status] ?? ""}`}>{label(o.status)}</span>
-        <span className="chip bg-mango/30">{METHOD[o.payment_method] ?? o.payment_method} · {cod && pending ? "Collect cash" : cod && o.payment_status === "PAID" ? "Paid in cash" : label(o.payment_status)}</span>
+        <span className={`chip ${o.payment_status === "PENDING_VERIFICATION" ? "bg-strawberry/15 font-extrabold text-strawberry" : "bg-mango/30"}`}>{METHOD[o.payment_method] ?? o.payment_method} · {cod && pending ? "Collect cash" : cod && o.payment_status === "PAID" ? "Paid in cash" : label(o.payment_status)}</span>
         <span className="w-full text-xs font-normal text-ink/70">Placed {when(o.created_at)}{o.completed_at ? ` · Completed ${when(o.completed_at)}` : ""}</span>
       </summary>
       <div className="mt-4 grid gap-5 md:grid-cols-2">
@@ -231,9 +268,20 @@ function OrderCard({ o }: { o: AdminOrder }) {
           {o.instructions && <p>Note: {o.instructions}</p>}
           <ul className="mt-2 list-disc pl-5">{o.items.map((i, n) => <li key={n}>{i.quantity}× {i.name}{i.variant ? ` (${i.variant})` : ""}{i.addons.length ? ` + ${i.addons.map((a) => a.name).join(", ")}` : ""} — {formatPKR(i.line_total)}</li>)}</ul>
           <p>Subtotal {formatPKR(o.subtotal)} · Delivery {o.delivery_charge === 0 ? "FREE" : formatPKR(o.delivery_charge)}{o.tax_total ? ` · Tax ${formatPKR(o.tax_total)}` : ""}{o.discount_total ? ` · Discount −${formatPKR(o.discount_total)}` : ""} · <strong>Total {formatPKR(o.total)}</strong></p>
-          {o.transaction_ref && <p>Transaction ref: <strong className="font-mono">{o.transaction_ref}</strong></p>}
-          {o.has_receipt && (
-            <button className="btn-secondary min-h-[40px] gap-2 px-4" onClick={() => openReceipt(o.order_number)}><FiFileText aria-hidden />View receipt</button>
+          {!cod && (
+            <div className="mt-2 space-y-2 rounded-2xl bg-vanilla p-3">
+              <p className="font-bold text-forest">Easypaisa payment check</p>
+              <p>Amount to receive: <strong>{formatPKR(o.total)}</strong></p>
+              <p>Payment note should say: <strong className="font-mono">{o.order_number}</strong></p>
+              <p>Transaction ID: {o.transaction_ref ? <strong className="font-mono">{o.transaction_ref}</strong> : <span className="text-ink/60">not sent yet</span>}</p>
+              {!o.transaction_ref && !o.has_receipt && <p className="text-ink/70">The customer has not sent any proof yet.</p>}
+              {o.has_receipt && (
+                <div className="space-y-2">
+                  <ReceiptInline n={o.order_number} />
+                  <button className="btn-secondary min-h-[40px] gap-2 px-4" onClick={() => openReceipt(o.order_number)}><FiFileText aria-hidden />View receipt</button>
+                </div>
+              )}
+            </div>
           )}
         </div>
         <div className="space-y-3">

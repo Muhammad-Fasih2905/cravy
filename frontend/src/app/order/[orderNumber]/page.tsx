@@ -6,12 +6,13 @@ import { formatPKR } from "@/lib/money";
 import { SERVER_API as API } from "@/lib/config";
 import type { OrderResult } from "@/lib/types";
 import { PaymentPanel } from "@/components/PaymentPanel";
+import { AutoRefresh } from "@/components/AutoRefresh";
 
 export const metadata: Metadata = { title: "Order confirmed", robots: { index: false } };
 export const dynamic = "force-dynamic"; // always show the live order and payment status
 
-const STEPS = ["PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY_FOR_DISPATCH", "OUT_FOR_DELIVERY", "DELIVERED"];
-const label = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
+const STEPS: readonly string[] = ["PENDING", "COMPLETED"];
+const STEP_LABEL: Record<string, string> = { PENDING: "Order received", COMPLETED: "Completed" };
 
 export default async function OrderPage({ params }: { params: { orderNumber: string } }) {
   const res = await fetch(`${API}/api/orders/${encodeURIComponent(params.orderNumber)}`, { cache: "no-store" });
@@ -23,8 +24,11 @@ export default async function OrderPage({ params }: { params: { orderNumber: str
   const online = o.payment_method !== "COD";
   const needsPayment = online && !["PAID", "REFUNDED"].includes(o.payment_status) && !cancelled;
 
+  const live = !cancelled && o.status === "PENDING";
+
   return (
     <main className="mx-auto max-w-2xl space-y-6 px-4 py-8 sm:px-5 sm:py-10">
+      <AutoRefresh active={live} />
       <div className="text-center">
         <CheckCircle2 className="mx-auto text-forest" size={56} aria-hidden />
         <h1 className="mt-3 text-3xl sm:text-4xl">{needsPayment ? "Order placed, payment due" : "Order placed!"}</h1>
@@ -46,7 +50,7 @@ export default async function OrderPage({ params }: { params: { orderNumber: str
           <ol className="space-y-3">
             {STEPS.map((st, i) => (
               <li key={st} className={`flex items-center gap-3 ${i <= idx ? "font-bold text-forest" : "text-ink/50"}`} aria-current={i === idx ? "step" : undefined}>
-                <span className={`h-3 w-3 shrink-0 rounded-full ${i <= idx ? "bg-mango" : "bg-vanilla-deep"}`} aria-hidden />{label(st)}
+                <span className={`h-3 w-3 shrink-0 rounded-full ${i <= idx ? "bg-mango" : "bg-vanilla-deep"}`} aria-hidden />{STEP_LABEL[st]}
               </li>
             ))}
           </ol>

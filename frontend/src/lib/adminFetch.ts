@@ -23,5 +23,12 @@ async function openProtected(path: string): Promise<void> {
 export const printSlip = (orderNumber: string) => openProtected(`/api/admin/orders/${encodeURIComponent(orderNumber)}/slip?autoprint=1`);
 export const openReceipt = (orderNumber: string) => openProtected(`/api/admin/orders/${encodeURIComponent(orderNumber)}/receipt`);
 
+/** The receipt file as a Blob, so the admin can see the screenshot right inside the order card. */
+export async function fetchReceiptBlob(orderNumber: string): Promise<Blob> {
+  const r = await fetch(`${PUBLIC_API}/api/admin/orders/${encodeURIComponent(orderNumber)}/receipt`, { headers: authHeader(), cache: "no-store" });
+  if (!r.ok) throw new Error(String(r.status));
+  return r.blob();
+}
+
 /** URL for the live order stream. EventSource cannot send headers, so the server accepts ?token= for this one route. */
 export const streamUrl = () => `${PUBLIC_API}/api/admin/orders/stream?token=${encodeURIComponent(token())}`;
