@@ -23,7 +23,8 @@ const readFavs = (): number[] => {
   try { const v = JSON.parse(localStorage.getItem(FAV_KEY) ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "number") : []; } catch { return []; }
 };
 
-export function ProductCard({ p }: { p: Product }) {
+/** showToppings: the free waffle toppings picker. Only the product's own page (/menu/<slug>) turns it on; the cards in the menu list do not show it. */
+export function ProductCard({ p, showToppings = false }: { p: Product; showToppings?: boolean }) {
   const dispatch = useAppDispatch();
   const [fav, setFav] = useState(false);
   useEffect(() => { setFav(readFavs().includes(p.id)); }, [p.id]);
@@ -42,19 +43,19 @@ export function ProductCard({ p }: { p: Product }) {
   const variant = variants.find((v) => v.id === variantId) ?? variants[0] ?? null;
   const addons = p.addons.filter((a) => a.is_available);
   const pickedIds = addonIds.filter((id) => addons.some((a) => a.id === id));
-  // Free waffle toppings (Vanilla Cream Waffle, Strawberry Velvet...): shown as picture tiles inside every waffle card. They come from
+  // Free waffle toppings (Vanilla Cream Waffle, Strawberry Velvet...): shown as picture tiles on the waffle's own page (/menu/<slug>), not on the list cards. They come from
   // the products of those names (picture + title), cost nothing, and are sent to the kitchen with the order. Nothing to set up in the admin.
   const { data: menu } = useGetMenuQuery();
   const inWaffleMenu = !!menu?.categories.some((c) => (isWaffleCategory(c.slug) || isWaffleCategory(c.name)) && c.products.some((x) => x.id === p.id));
   const toppings = useMemo(() => {
-    if (!inWaffleMenu || isWaffleTopping(p.name)) return [];
+    if (!showToppings || !inWaffleMenu || isWaffleTopping(p.name)) return [];
     const all = (menu?.categories ?? []).flatMap((c) => c.products);
     return WAFFLE_TOPPING_LIST.map((t) => {
       const own = all.find((x) => toppingKey(x.name) === toppingKey(t.name))?.image_url; // fallback: the product's own picture
       const image: StaticImageData | string | null = t.image ?? (own ? (own.startsWith("http") ? own : `${API}${own}`) : null);
       return { name: t.name, image };
     });
-  }, [menu, inWaffleMenu, p.name]);
+  }, [menu, inWaffleMenu, p.name, showToppings]);
   const [pickedToppings, setPickedToppings] = useState<string[]>([]);
   const [mainBroken, setMainBroken] = useState(false); // a photo file that is missing on the server shows the placeholder, not a broken image
 

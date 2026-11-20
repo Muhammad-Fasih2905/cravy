@@ -15,7 +15,7 @@ export function LiveProduct({ slug, initial }: { slug: string; initial: Product 
   return (
     <>
       <h1 className="mb-6 text-4xl">{p.name}</h1>
-      <ProductCard p={p} />
+      <ProductCard p={p} showToppings />
     </>
   );
 }
