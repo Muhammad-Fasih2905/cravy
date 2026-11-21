@@ -17,11 +17,11 @@ const label = (mins: number) => {
     return `${h24 % 12 || 12}:${String(m).padStart(2, "0")} ${h24 >= 12 ? "PM" : "AM"}`;
 };
 
-/** Minutes since midnight, right now, in the shop's time zone. */
+const SHOP_UTC_OFFSET_MIN = 5 * 60; // Karachi is UTC+5 all year (Pakistan has no daylight saving)
+
+/** Minutes since midnight, right now, in the shop's time zone. Plain arithmetic on the UTC clock, so a browser's date formatting cannot get it wrong. */
 function minutesNow(now: Date): number {
-    const parts = new Intl.DateTimeFormat("en-GB", { timeZone: SHOP_TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
-    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
-    return get("hour") * 60 + get("minute");
+    return (now.getUTCHours() * 60 + now.getUTCMinutes() + SHOP_UTC_OFFSET_MIN) % 1440;
 }
 
 export function shopStatus(now = new Date()): ShopStatus {
@@ -37,9 +37,19 @@ export function useShopStatus(): ShopStatus | null {
     useEffect(() => {
         const tick = () => setS((prev) => { const n = shopStatus(); return prev && prev.open === n.open && prev.note === n.note ? prev : n; });
         tick();
-        const id = setInterval(tick, 30_000);
+        const id = setInterval(tick, 15_000);
+        // a phone that slept, a tab that was in the background or a page restored from the back/forward cache: re-check at once
         document.addEventListener("visibilitychange", tick);
-        return () => { clearInterval(id); document.removeEventListener("visibilitychange", tick); };
+        window.addEventListener("focus", tick);
+        window.addEventListener("pageshow", tick);
+        window.addEventListener("online", tick);
+        return () => {
+            clearInterval(id);
+            document.removeEventListener("visibilitychange", tick);
+            window.removeEventListener("focus", tick);
+            window.removeEventListener("pageshow", tick);
+            window.removeEventListener("online", tick);
+        };
     }, []);
     return s;
 }

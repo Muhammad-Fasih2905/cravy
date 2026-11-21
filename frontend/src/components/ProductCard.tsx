@@ -130,7 +130,7 @@ export function ProductCard({ p, showToppings = false }: { p: Product; showToppi
                   <label key={t.name} className={`relative flex cursor-pointer flex-col gap-1 rounded-xl bg-white p-1 text-center ring-2 transition ${on ? "ring-forest" : "ring-vanilla-deep/70 hover:ring-forest/40"}`}>
                     <input type="checkbox" className="peer sr-only" checked={on} onChange={(e) => setPickedToppings((c) => (e.target.checked ? [...c, t.name] : c.filter((x) => x !== t.name)))} />
                     <span className="relative block aspect-square w-full overflow-hidden rounded-lg bg-gradient-to-br from-vanilla to-mint peer-focus-visible:ring-2 peer-focus-visible:ring-forest">
-                      {t.image ? <Image src={t.image} alt="" fill sizes="96px" className="object-cover" unoptimized={typeof t.image === "string" && t.image.startsWith(API) && API.includes("localhost")}
+                      {t.image ? <Image src={t.image} alt="" fill sizes="(max-width: 640px) 34vw, 260px" quality={90} className="object-cover" unoptimized={typeof t.image === "string" && t.image.startsWith(API) && API.includes("localhost")}
                         onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }} />
                         : <span className="grid h-full place-items-center text-forest/40" aria-hidden><GiIceCreamCone size={22} /></span>}
                       {on && <span aria-hidden className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-forest text-cream"><FiCheck size={13} /></span>}
