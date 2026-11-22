@@ -3,7 +3,7 @@ import vanillaCream from "@/assets/Vanilla_cream_waffle_on_plate.webp";
 import strawberryVelvet from "@/assets/Strawberry_velvet_ice_cream_scoop.webp";
 import blueberryRoyale from "@/assets/Blueberry_ice_cream_scoop.webp";
 import goldenCaramel from "@/assets/Caramel_ice_cream_scoop.webp";
-import chocoLuxe from "@/assets/toppings/chocoLux.webp";
+import chocoLuxe from "@/assets/chocoLux.webp";
 
 /**
  * Waffle toppings: free, shown as picture tiles inside every waffle card (Waffle menu only). They are fully hard-coded here:
