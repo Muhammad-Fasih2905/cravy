@@ -47,6 +47,9 @@ export function ProductCard({ p, showToppings = false }: { p: Product; showToppi
   // the products of those names (picture + title), cost nothing, and are sent to the kitchen with the order. Nothing to set up in the admin.
   const { data: menu } = useGetMenuQuery();
   const inWaffleMenu = !!menu?.categories.some((c) => (isWaffleCategory(c.slug) || isWaffleCategory(c.name)) && c.products.some((x) => x.id === p.id));
+  // Waffles: "Without Ice Cream" / "With Ice Cream (N Scoops)" are two clear choices (admin: Sizes), each showing the full price it costs. No "+ price" tick box.
+  const isWaffle = inWaffleMenu && !isWaffleTopping(p.name);
+  const shownAddons = isWaffle && variants.length > 0 ? addons.filter((a) => !/ice\s*cream/i.test(a.name)) : addons; // an old "With Ice Cream +Rs." tick box would double the price
   const toppings = useMemo(() => {
     if (!showToppings || !inWaffleMenu || isWaffleTopping(p.name)) return [];
     const all = (menu?.categories ?? []).flatMap((c) => c.products);
@@ -97,7 +100,27 @@ export function ProductCard({ p, showToppings = false }: { p: Product; showToppi
         {p.description && <p className="line-clamp-2 text-[0.9rem] leading-snug text-ink/60 sm:line-clamp-none sm:text-sm sm:text-ink/80">{p.description}</p>}
         {p.is_demo && <p className="text-xs font-semibold text-strawberry">DEMO ITEM</p>}
 
-        {variants.length > 0 && (
+        {variants.length > 0 && isWaffle && (
+          <fieldset className="grid gap-2">
+            <legend className="sr-only">Choose your waffle</legend>
+            {variants.map((v) => {
+              const on = variant?.id === v.id;
+              return (
+                <label key={v.id} className={`flex min-h-[48px] cursor-pointer items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 ring-2 transition ${on ? "ring-forest" : "ring-vanilla-deep/70 hover:ring-forest/40"}`}>
+                  <input type="radio" className="peer sr-only" name={`v-${p.id}`} checked={on} onChange={() => setVariantId(v.id)} />
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span aria-hidden className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 transition peer-focus-visible:ring-2 peer-focus-visible:ring-forest ${on ? "border-forest bg-forest text-cream" : "border-ink/30 bg-white"}`}>{on && <FiCheck size={13} />}</span>
+                    <span className="text-sm font-semibold leading-tight text-ink">{v.name}</span>
+                  </span>
+                  <span className="flex shrink-0 items-baseline gap-1.5 whitespace-nowrap text-sm font-extrabold text-forest">
+                    {formatPKR(finalOfVariant(p, v))}{percent > 0 && <s className="text-xs font-normal opacity-60">{formatPKR(v.price)}</s>}
+                  </span>
+                </label>
+              );
+            })}
+          </fieldset>
+        )}
+        {variants.length > 0 && !isWaffle && (
           <fieldset className="flex flex-wrap gap-1.5 sm:gap-2">
             <legend className="sr-only">Size</legend>
             {variants.map((v) => (
@@ -108,10 +131,10 @@ export function ProductCard({ p, showToppings = false }: { p: Product; showToppi
             ))}
           </fieldset>
         )}
-        {addons.length > 0 && (
+        {shownAddons.length > 0 && (
           <fieldset className="flex flex-wrap gap-x-3 gap-y-1 sm:gap-2">
             <legend className="sr-only">Extras</legend>
-            {addons.map((a) => (
+            {shownAddons.map((a) => (
               <label key={a.id} className="flex items-center gap-2 text-sm">
                 <input type="checkbox" className="h-5 w-5 accent-forest" checked={pickedIds.includes(a.id)}
                   onChange={(e) => setAddonIds((c) => (e.target.checked ? [...c, a.id] : c.filter((x) => x !== a.id)))} />

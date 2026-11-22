@@ -3,7 +3,7 @@ import vanillaCream from "@/assets/Vanilla_cream_waffle_on_plate.webp";
 import strawberryVelvet from "@/assets/Strawberry_velvet_ice_cream_scoop.webp";
 import blueberryRoyale from "@/assets/Blueberry_ice_cream_scoop.webp";
 import goldenCaramel from "@/assets/Caramel_ice_cream_scoop.webp";
-// import chocoLuxe from "@/assets/toppings/choco-luxe.webp";
+import chocoLuxe from "@/assets/toppings/chocoLux.webp";
 
 /**
  * Waffle toppings: free, shown as picture tiles inside every waffle card (Waffle menu only). They are fully hard-coded here:
@@ -16,7 +16,7 @@ export const WAFFLE_TOPPING_LIST: WaffleTopping[] = [
     { name: "Strawberry Velvet", image: strawberryVelvet },
     { name: "Blueberry Royale", image: blueberryRoyale },
     { name: "Golden Caramel", image: goldenCaramel },
-    // { name: "Choco Luxe", image: chocoLuxe },
+    { name: "Choco Luxe", image: chocoLuxe },
 ];
 
 export const WAFFLE_CATEGORY = "waffle"; // the Waffle category (slug or name, any capitals, "waffles" also works)
