@@ -1,10 +1,11 @@
 "use client";
-import Image, { type StaticImageData } from "next/image";
+import Image from "next/image";
 import Link from "next/link";
 import { GiIceCreamCone } from "react-icons/gi";
 import { motion } from "framer-motion";
 import { FiPlus } from "react-icons/fi";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { FaHeart, FaRegHeart } from "react-icons/fa";
 import { FiCheck } from "react-icons/fi";
 import type { Product } from "@/lib/types";
@@ -14,7 +15,10 @@ import { useAppDispatch } from "@/store/hooks";
 import { addItem } from "@/store/cartSlice";
 import { PUBLIC_API as API } from "@/lib/config";
 import { useGetMenuQuery } from "@/store/api";
-import { isWaffleCategory, isWaffleTopping, toppingKey, WAFFLE_TOPPING_LIST } from "@/config/waffleFlavours";
+import { isWaffleCategory, isWaffleTopping } from "@/config/waffleFlavours";
+import { AnimatePresence } from "framer-motion";
+import { usePathname } from "next/navigation";
+import { WaffleCustomizer, WaffleInline, scoopsFor, type WaffleChoice } from "./WaffleCustomizer";
 
 
 /** Hearted products are remembered in this browser only (a per-visitor convenience; it never reaches the server). */
@@ -23,8 +27,7 @@ const readFavs = (): number[] => {
   try { const v = JSON.parse(localStorage.getItem(FAV_KEY) ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "number") : []; } catch { return []; }
 };
 
-/** showToppings: the free waffle toppings picker. Only the product's own page (/menu/<slug>) turns it on; the cards in the menu list do not show it. */
-export function ProductCard({ p, showToppings = false }: { p: Product; showToppings?: boolean }) {
+export function ProductCard({ p }: { p: Product }) {
   const dispatch = useAppDispatch();
   const [fav, setFav] = useState(false);
   useEffect(() => { setFav(readFavs().includes(p.id)); }, [p.id]);
@@ -43,27 +46,19 @@ export function ProductCard({ p, showToppings = false }: { p: Product; showToppi
   const variant = variants.find((v) => v.id === variantId) ?? variants[0] ?? null;
   const addons = p.addons.filter((a) => a.is_available);
   const pickedIds = addonIds.filter((id) => addons.some((a) => a.id === id));
-  // Free waffle toppings (Vanilla Cream Waffle, Strawberry Velvet...): shown as picture tiles on the waffle's own page (/menu/<slug>), not on the list cards. They come from
-  // the products of those names (picture + title), cost nothing, and are sent to the kitchen with the order. Nothing to set up in the admin.
+  // Waffles only: tapping Add opens the guided flow (free toppings from the backend, then free ice-cream flavours).
   const { data: menu } = useGetMenuQuery();
   const inWaffleMenu = !!menu?.categories.some((c) => (isWaffleCategory(c.slug) || isWaffleCategory(c.name)) && c.products.some((x) => x.id === p.id));
-  // Waffles: "Without Ice Cream" / "With Ice Cream (N Scoops)" are two clear choices (admin: Sizes), each showing the full price it costs. No "+ price" tick box.
   const isWaffle = inWaffleMenu && !isWaffleTopping(p.name);
-  const shownAddons = isWaffle && variants.length > 0 ? addons.filter((a) => !/ice\s*cream/i.test(a.name)) : addons; // an old "With Ice Cream +Rs." tick box would double the price
-  const toppings = useMemo(() => {
-    if (!showToppings || !inWaffleMenu || isWaffleTopping(p.name)) return [];
-    const all = (menu?.categories ?? []).flatMap((c) => c.products);
-    return WAFFLE_TOPPING_LIST.map((t) => {
-      const own = all.find((x) => toppingKey(x.name) === toppingKey(t.name))?.image_url; // fallback: the product's own picture
-      const image: StaticImageData | string | null = t.image ?? (own ? (own.startsWith("http") ? own : `${API}${own}`) : null);
-      return { name: t.name, image };
-    });
-  }, [menu, inWaffleMenu, p.name, showToppings]);
-  const [pickedToppings, setPickedToppings] = useState<string[]>([]);
+  const [customizing, setCustomizing] = useState(false);
+  // On the waffle's own page the toppings and ice-cream flavours are shown right there (no pop-up); in the menu list "Add" opens the guided sheet.
+  const onOwnPage = usePathname() === `/menu/${p.slug}`;
+  const [inline, setInline] = useState<{ c: WaffleChoice; valid: boolean } | null>(null);
+  const sc = scoopsFor([variant?.name, ...addons.filter((a) => pickedIds.includes(a.id)).map((a) => a.name)]);
   const [mainBroken, setMainBroken] = useState(false); // a photo file that is missing on the server shows the placeholder, not a broken image
 
   // "Frequently bought together": tick the extras and they go to the cart together with this item (each as its own line).
-  const bundle = p.bundle ?? [];
+  const bundle = isWaffle ? [] : (p.bundle ?? []); // waffles use the toppings + ice-cream flow instead
   const [pickedBundle, setPickedBundle] = useState<number[]>([]);
   const bundlePicked = bundle.filter((b) => pickedBundle.includes(b.id));
   const bundleTotal = bundlePicked.reduce((sum, b) => sum + b.price, 0);
@@ -100,27 +95,7 @@ export function ProductCard({ p, showToppings = false }: { p: Product; showToppi
         {p.description && <p className="line-clamp-2 text-[0.9rem] leading-snug text-ink/60 sm:line-clamp-none sm:text-sm sm:text-ink/80">{p.description}</p>}
         {p.is_demo && <p className="text-xs font-semibold text-strawberry">DEMO ITEM</p>}
 
-        {variants.length > 0 && isWaffle && (
-          <fieldset className="grid gap-2">
-            <legend className="sr-only">Choose your waffle</legend>
-            {variants.map((v) => {
-              const on = variant?.id === v.id;
-              return (
-                <label key={v.id} className={`flex min-h-[48px] cursor-pointer items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 ring-2 transition ${on ? "ring-forest" : "ring-vanilla-deep/70 hover:ring-forest/40"}`}>
-                  <input type="radio" className="peer sr-only" name={`v-${p.id}`} checked={on} onChange={() => setVariantId(v.id)} />
-                  <span className="flex min-w-0 items-center gap-2.5">
-                    <span aria-hidden className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 transition peer-focus-visible:ring-2 peer-focus-visible:ring-forest ${on ? "border-forest bg-forest text-cream" : "border-ink/30 bg-white"}`}>{on && <FiCheck size={13} />}</span>
-                    <span className="text-sm font-semibold leading-tight text-ink">{v.name}</span>
-                  </span>
-                  <span className="flex shrink-0 items-baseline gap-1.5 whitespace-nowrap text-sm font-extrabold text-forest">
-                    {formatPKR(finalOfVariant(p, v))}{percent > 0 && <s className="text-xs font-normal opacity-60">{formatPKR(v.price)}</s>}
-                  </span>
-                </label>
-              );
-            })}
-          </fieldset>
-        )}
-        {variants.length > 0 && !isWaffle && (
+        {variants.length > 0 && (
           <fieldset className="flex flex-wrap gap-1.5 sm:gap-2">
             <legend className="sr-only">Size</legend>
             {variants.map((v) => (
@@ -131,10 +106,10 @@ export function ProductCard({ p, showToppings = false }: { p: Product; showToppi
             ))}
           </fieldset>
         )}
-        {shownAddons.length > 0 && (
+        {addons.length > 0 && (
           <fieldset className="flex flex-wrap gap-x-3 gap-y-1 sm:gap-2">
             <legend className="sr-only">Extras</legend>
-            {shownAddons.map((a) => (
+            {addons.map((a) => (
               <label key={a.id} className="flex items-center gap-2 text-sm">
                 <input type="checkbox" className="h-5 w-5 accent-forest" checked={pickedIds.includes(a.id)}
                   onChange={(e) => setAddonIds((c) => (e.target.checked ? [...c, a.id] : c.filter((x) => x !== a.id)))} />
@@ -143,29 +118,8 @@ export function ProductCard({ p, showToppings = false }: { p: Product; showToppi
             ))}
           </fieldset>
         )}
-        {toppings.length > 0 && (
-          <fieldset>
-            <legend className="mb-1.5 text-[0.8rem] font-extrabold uppercase tracking-wide text-forest sm:text-sm">Toppings <span className="font-semibold normal-case tracking-normal text-ink/60">· free, pick any</span></legend>
-            <div className="grid grid-cols-3 gap-2">
-              {toppings.map((t) => {
-                const on = pickedToppings.includes(t.name);
-                return (
-                  <label key={t.name} className={`relative flex cursor-pointer flex-col gap-1 rounded-xl bg-white p-1 text-center ring-2 transition ${on ? "ring-forest" : "ring-vanilla-deep/70 hover:ring-forest/40"}`}>
-                    <input type="checkbox" className="peer sr-only" checked={on} onChange={(e) => setPickedToppings((c) => (e.target.checked ? [...c, t.name] : c.filter((x) => x !== t.name)))} />
-                    <span className="relative block aspect-square w-full overflow-hidden rounded-lg bg-gradient-to-br from-vanilla to-mint peer-focus-visible:ring-2 peer-focus-visible:ring-forest">
-                      {t.image ? <Image src={t.image} alt="" fill sizes="(max-width: 640px) 34vw, 260px" quality={90} className="object-cover" unoptimized={typeof t.image === "string" && t.image.startsWith(API) && API.includes("localhost")}
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }} />
-                        : <span className="grid h-full place-items-center text-forest/40" aria-hidden><GiIceCreamCone size={22} /></span>}
-                      {on && <span aria-hidden className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-forest text-cream"><FiCheck size={13} /></span>}
-                    </span>
-                    <span className="line-clamp-2 min-h-[2.1em] px-0.5 text-[0.72rem] font-semibold leading-tight text-ink sm:text-xs">{t.name}</span>
-                    <span className="pb-0.5 text-[0.7rem] font-bold text-forest">Free</span>
-                  </label>
-                );
-              })}
-            </div>
-          </fieldset>
-        )}
+        {isWaffle && onOwnPage && p.is_available && <WaffleInline scoops={sc.count} exact={sc.exact} onChange={(c, valid) => setInline({ c, valid })} />}
+        {isWaffle && onOwnPage && inline && !inline.valid && <p className="text-sm font-semibold text-strawberry" role="status">Choose {sc.count} ice-cream scoop{sc.count > 1 ? "s" : ""} to add this waffle.</p>}
 
         {bundle.length > 0 && (
           <section aria-label="Frequently bought together" className="rounded-xl bg-vanilla/50 p-2.5 sm:p-3">
@@ -205,14 +159,25 @@ export function ProductCard({ p, showToppings = false }: { p: Product; showToppi
           </span>
           <div className="flex items-center gap-1 sm:justify-between sm:gap-2">
             {p.is_available ? (
-              <motion.button whileTap={{ scale: 0.94 }} className="btn-primary min-h-[46px] min-w-0 gap-2 whitespace-nowrap px-5 max-sm:max-w-[11rem] max-sm:flex-1 max-sm:rounded-xl max-sm:px-3 max-sm:text-[0.92rem] sm:min-h-[48px]" onClick={() => {
+              <motion.button whileTap={{ scale: 0.94 }} disabled={isWaffle && onOwnPage && !!inline && !inline.valid} title={isWaffle && onOwnPage && inline && !inline.valid ? `Choose ${sc.count} ice-cream scoop${sc.count > 1 ? "s" : ""} first` : undefined} className="disabled:opacity-50 btn-primary min-h-[46px] min-w-0 gap-2 whitespace-nowrap px-5 max-sm:max-w-[11rem] max-sm:flex-1 max-sm:rounded-xl max-sm:px-3 max-sm:text-[0.92rem] sm:min-h-[48px]" onClick={() => {
+                if (isWaffle && onOwnPage) {
+                  if (!inline || !inline.valid) return;
+                  const c = inline.c;
+                  dispatch(addItem({
+                    product_id: p.id, variant_id: variant?.id ?? null, addon_ids: pickedIds, quantity: 1,
+                    name: p.name, variantName: variant?.name ?? null,
+                    addonNames: [...addons.filter((a) => pickedIds.includes(a.id)).map((a) => a.name),
+                      ...c.toppingNames.map((n) => `Topping: ${n}`), ...c.flavourNames.map((n) => `Ice cream: ${n}`)],
+                    unitPrice: price, toppings: c.toppings, flavours: c.flavours,
+                  }));
+                  return;
+                }
+                if (isWaffle) { setCustomizing(true); return; }
                 dispatch(addItem({
                   product_id: p.id, variant_id: variant?.id ?? null, addon_ids: pickedIds, quantity: 1,
                   name: p.name, variantName: variant?.name ?? null,
                   addonNames: addons.filter((a) => pickedIds.includes(a.id)).map((a) => a.name), unitPrice: price,
-                  freeToppings: toppings.filter((t) => pickedToppings.includes(t.name)).map((t) => t.name),
                 }));
-                if (pickedToppings.length) setPickedToppings([]);
                 // the ticked "bought together" items are ordinary cart lines; the server prices each of them again
                 bundlePicked.forEach((b) => dispatch(addItem({
                   product_id: b.id, variant_id: b.variant_id, addon_ids: [], quantity: 1,
@@ -230,6 +195,27 @@ export function ProductCard({ p, showToppings = false }: { p: Product; showToppi
           </div>
         </div>
       </div>
+      {/* rendered in <body>: the card is transformed (hover lift), which would otherwise trap a fixed dialog inside it */}
+      {typeof document !== "undefined" && createPortal(<AnimatePresence>
+        {customizing && (
+          <WaffleCustomizer
+            name={p.name} summary={[variant?.name, ...addons.filter((a) => pickedIds.includes(a.id)).map((a) => a.name)].filter(Boolean).join(", ")}
+            scoops={sc.count} exact={sc.exact}
+            onClose={() => setCustomizing(false)}
+            onDone={(c: WaffleChoice) => {
+              dispatch(addItem({
+                product_id: p.id, variant_id: variant?.id ?? null, addon_ids: pickedIds, quantity: 1,
+                name: p.name, variantName: variant?.name ?? null,
+                // free choices are shown in the cart / order as price-0 lines
+                addonNames: [...addons.filter((a) => pickedIds.includes(a.id)).map((a) => a.name),
+                  ...c.toppingNames.map((n) => `Topping: ${n}`), ...c.flavourNames.map((n) => `Ice cream: ${n}`)],
+                unitPrice: price, toppings: c.toppings, flavours: c.flavours,
+              }));
+              setCustomizing(false);
+            }}
+          />
+        )}
+      </AnimatePresence>, document.body)}
     </motion.article>
   );
 }

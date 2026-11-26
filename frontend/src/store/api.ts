@@ -26,6 +26,21 @@ export type AdminStats = {
   pending_payments: number; awaiting_payments: number;
   bestsellers: { name: string; quantity: number }[]; daily_sales: { date: string; total: number }[];
 };
+export type SalesPoint = { key: string; label: string; total: number; orders: number; future: boolean };
+export type SalesOrder = { order_number: string; time: string; total: number; customer: string; method: string | null; items: string };
+export type SalesReport = {
+  mode: "month" | "year" | "days" | "day"; year: number; month: number; days: number | null;
+  /** only for mode "day": the date (YYYY-MM-DD) and that day's completed orders */
+  date: string | null; orders_list: SalesOrder[];
+  points: SalesPoint[]; total: number; orders: number; average_order: number;
+  best: { key: string; label: string; total: number } | null;
+  previous_total: number; change_percent: number | null;
+  /** the period is still running (this month / this year), so it is compared with the same stretch of the previous one */
+  partial: boolean;
+  /** month of the very first completed order: the calendar starts here */
+  first_sale: { year: number; month: number } | null;
+  years: number[]; today: string; current: { year: number; month: number };
+};
 export type AdminProduct = {
   id: number; name: string; slug: string; base_price: number; is_available: boolean; is_bestseller: boolean;
   is_featured: boolean; is_demo: boolean; category: string; image_url: string | null;
@@ -39,10 +54,14 @@ export type ProductPatch = Partial<{
 export type AdminBundle = { product_ids: number[]; items: { id: number; name: string; category: string | null; image_url: string | null; price: number; is_available: boolean }[] };
 export type OptionRow = { id?: number; name: string; price: number; is_available: boolean };
 export type ProductOptions = { variants: OptionRow[]; addons: OptionRow[] };
+/** Free waffle choices. Toppings are managed in the admin; flavours are the available products of the Ice Cream category. */
+export type WaffleOptionItem = { id: number; name: string; image_url: string | null };
+export type WaffleOptions = { toppings: WaffleOptionItem[]; flavours: WaffleOptionItem[] };
+export type AdminTopping = WaffleOptionItem & { is_available: boolean; sort_order: number; kind: "TOPPING" | "ICECREAM" };
 export type AdminSettings = Record<string, string | number | boolean | null>;
 
 /** Orders, carts, admin and the menu/products/settings must always come straight from the server, never from a cache (that is what makes menu changes show up at once). */
-const LIVE = /\/api\/(admin|orders|cart|payment-methods|menu|products|settings)/;
+const LIVE = /\/api\/(admin|orders|cart|payment-methods|menu|products|settings|waffle-options)/;
 
 /** After the admin changes a product, tell the other open tabs of this browser to refresh their menu immediately. */
 const announce = async (_: unknown, { queryFulfilled }: { queryFulfilled: Promise<unknown> }) => {
@@ -76,10 +95,11 @@ export const api = createApi({
       return h;
     },
   }),
-  tagTypes: ["Menu", "Settings", "Orders", "Stats", "AdminSettings", "AdminProducts", "Options", "AdminCategories", "Bundle"],
+  tagTypes: ["Menu", "Settings", "Orders", "Stats", "AdminSettings", "AdminProducts", "Options", "AdminCategories", "Bundle", "Toppings"],
   keepUnusedDataFor: 300,
   endpoints: (b) => ({
     getMenu: b.query<Menu, void>({ query: () => "/api/menu", providesTags: ["Menu"] }),
+    getWaffleOptions: b.query<WaffleOptions, void>({ query: () => "/api/waffle-options", providesTags: ["Menu", "Toppings"] }),
     getSettings: b.query<PublicSettings, void>({ query: () => "/api/settings", providesTags: ["Settings"] }),
     getProduct: b.query<Product, string>({ query: (slug) => `/api/products/${slug}`, providesTags: ["Menu"] }),
     getDeliveryRates: b.query<DeliveryRates, void>({ query: () => "/api/delivery-rates" }),
@@ -96,6 +116,17 @@ export const api = createApi({
       query: (body) => ({ url: "/api/admin/login", method: "POST", body }),
     }),
     adminStats: b.query<AdminStats, void>({ query: () => "/api/admin/stats", providesTags: ["Stats"] }),
+    // Sales chart: ?year&month (a bar per day), ?year&month=0 (a bar per month) or ?days=7. Tagged "Stats", so the live order stream keeps it current.
+    adminSales: b.query<SalesReport, { year?: number; month?: number; days?: number; date?: string }>({
+      query: (a) => {
+        const q = new URLSearchParams();
+        if (a.date) q.set("date", a.date);
+        else if (a.days) q.set("days", String(a.days));
+        else { if (a.year !== undefined) q.set("year", String(a.year)); if (a.month !== undefined) q.set("month", String(a.month)); }
+        return `/api/admin/sales?${q.toString()}`;
+      },
+      providesTags: ["Stats"],
+    }),
     // ALL orders, kept fresh by the live stream (see useOrderStream). Filtering by status/search happens in the browser.
     adminOrders: b.query<AdminOrder[], void>({
       query: () => ({ url: "/api/admin/orders", params: { limit: 500 } }),
@@ -138,6 +169,24 @@ export const api = createApi({
     adminSaveBundle: b.mutation<AdminBundle, { id: number; product_ids: number[] }>({
       query: ({ id, ...body }) => ({ url: `/api/admin/products/${id}/bundle`, method: "PUT", body }), invalidatesTags: ["Bundle", "Menu"], onQueryStarted: announce,
     }),
+    adminToppings: b.query<AdminTopping[], void>({ query: () => "/api/admin/waffle-toppings", providesTags: ["Toppings"] }),
+    adminAddTopping: b.mutation<AdminTopping, { name: string; kind: "TOPPING" | "ICECREAM" }>({
+      query: (body) => ({ url: "/api/admin/waffle-toppings", method: "POST", body }), invalidatesTags: ["Toppings"], onQueryStarted: announce,
+    }),
+    adminPatchTopping: b.mutation<AdminTopping, { id: number } & Partial<{ name: string; is_available: boolean; sort_order: number }>>({
+      query: ({ id, ...body }) => ({ url: `/api/admin/waffle-toppings/${id}`, method: "PATCH", body }), invalidatesTags: ["Toppings"], onQueryStarted: announce,
+    }),
+    adminDeleteTopping: b.mutation<unknown, number>({
+      query: (id) => ({ url: `/api/admin/waffle-toppings/${id}`, method: "DELETE" }), invalidatesTags: ["Toppings"], onQueryStarted: announce,
+    }),
+    adminToppingImage: b.mutation<AdminTopping, { id: number; file: File | null }>({
+      query: ({ id, file }) => {
+        if (!file) return { url: `/api/admin/waffle-toppings/${id}/image`, method: "DELETE" };
+        const body = new FormData(); body.append("file", file);
+        return { url: `/api/admin/waffle-toppings/${id}/image`, method: "POST", body };
+      },
+      invalidatesTags: ["Toppings"], onQueryStarted: announce,
+    }),
     adminOptions: b.query<ProductOptions, number>({ query: (id) => `/api/admin/products/${id}/options`, providesTags: ["Options"] }),
     adminSaveOptions: b.mutation<ProductOptions, { id: number } & ProductOptions>({
       query: ({ id, ...body }) => ({ url: `/api/admin/products/${id}/options`, method: "PUT", body }), invalidatesTags: ["Options", "Menu"], onQueryStarted: announce,
@@ -158,10 +207,11 @@ export const upsertAdminOrder = (o: AdminOrder) =>
   });
 
 export const {
+  useGetWaffleOptionsQuery, useAdminToppingsQuery, useAdminAddToppingMutation, useAdminPatchToppingMutation, useAdminDeleteToppingMutation, useAdminToppingImageMutation,
   useGetDeliveryRatesQuery,
   useAdminOptionsQuery, useAdminSaveOptionsMutation, useAdminBundleQuery, useAdminSaveBundleMutation,
   useAdminCategoriesQuery, useAdminCreateCategoryMutation, useAdminCreateProductMutation, useAdminDeleteProductMutation,
   useGetPaymentMethodsQuery, useGetMenuQuery, useGetSettingsQuery, useGetProductQuery, useGetQuoteMutation, useCreateOrderMutation,
-  useAdminLoginMutation, useAdminStatsQuery, useAdminOrdersQuery, useAdminSetStatusMutation, useAdminSetPaymentMutation,
+  useAdminLoginMutation, useAdminStatsQuery, useAdminSalesQuery, useAdminOrdersQuery, useAdminSetStatusMutation, useAdminSetPaymentMutation,
   useAdminSettingsQuery, useAdminSaveSettingsMutation, useAdminProductsQuery, useAdminPatchProductMutation,
 } = api;

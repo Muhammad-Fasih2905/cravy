@@ -9,19 +9,10 @@ import type { LatLng, OrderInput } from "@/lib/types";
 import { useCreateOrderMutation, useGetPaymentMethodsQuery, useGetQuoteMutation } from "@/store/api";
 import { LocationPicker } from "@/components/LocationPicker";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { clear } from "@/store/cartSlice";
+import { clear, toLine } from "@/store/cartSlice";
 
 type Method = OrderInput["payment_method"];
 const field = "min-h-[48px] w-full rounded-2xl border-2 border-vanilla-deep bg-white px-4 focus-visible:border-forest";
-
-/** The free waffle toppings go to the kitchen in the order's instructions (the server allows 300 characters; the toppings come first, the customer's own note is trimmed to fit). */
-function withToppings(items: { name: string; quantity: number; freeToppings?: string[] }[], notes: string): string | null {
-  const t = items.filter((i) => i.freeToppings?.length).map((i) => `${i.name} x${i.quantity}: ${i.freeToppings!.join(", ")}`).join("; ");
-  const head = t ? `Toppings - ${t}` : "";
-  const n = notes.trim();
-  const out = head && n ? `${head}. Note: ${n}` : head || n;
-  return out ? out.slice(0, 300) : null;
-}
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -31,7 +22,7 @@ export default function CheckoutPage() {
   const coupon = useAppSelector((s) => s.cart.coupon);
   const [getQuote, { data: quote, error: quoteErr, isLoading: quoting }] = useGetQuoteMutation();
   const [createOrder, { isLoading }] = useCreateOrderMutation();
-  const [f, setF] = useState({ name: "", phone: "", email: "", city: "", address: "", landmark: "", notes: "" });
+  const [f, setF] = useState({ name: "", phone: "", email: "", city: "", address: "" }); // address = what the customer types: building, floor, street, sector
   const [method, setMethod] = useState<Method>("COD");
   const [loc, setLoc] = useState<LatLng | null>(null); // the customer's map pin; the server turns it into a distance and a charge
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -41,12 +32,11 @@ export default function CheckoutPage() {
   // A location chosen in the popup (navbar) fills this form. If the customer skipped the popup, they enter it here instead.
   const saved = useSavedLocation();
   const appliedStamp = useRef<number | null>(null);
-  const addrTouched = useRef(false);
   useEffect(() => {
     if (!saved || appliedStamp.current === saved.stamp) return;
     appliedStamp.current = saved.stamp;
     if (saved.latitude != null && saved.longitude != null) setLoc({ latitude: saved.latitude, longitude: saved.longitude });
-    setF((prev) => ({ ...prev, city: saved.city, address: addrTouched.current && prev.address ? prev.address : (saved.address ?? `${saved.area}, ${saved.city}`) }));
+    setF((prev) => ({ ...prev, city: saved.city })); // the area comes from the popup; the street address is always typed by the customer
   }, [saved]);
   // Already chosen in the popup (not just a pin dropped on this page)? Then "Use my current location" is not needed here.
   const hideLocate = !!saved && saved.source !== "pin" && saved.latitude != null && saved.longitude != null;
@@ -65,7 +55,7 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!items.length) return;
     getQuote({
-      items: items.map(({ product_id, variant_id, addon_ids, quantity }) => ({ product_id, variant_id, addon_ids, quantity })),
+      items: items.map(toLine),
       coupon_code: coupon, latitude: loc?.latitude ?? null, longitude: loc?.longitude ?? null,
     });
   }, [items, loc, coupon, getQuote]);
@@ -73,8 +63,8 @@ export default function CheckoutPage() {
   const outOfRange = !!quote && quote.deliverable === false;
 
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    if (k === "address") addrTouched.current = true;
     setF({ ...f, [k]: e.target.value });
+    if (k === "address") setErrors((x) => ({ ...x, address: "" }));
   };
 
   // The pin was moved or placed on this page: keep the navbar location in step with it.
@@ -85,7 +75,7 @@ export default function CheckoutPage() {
     const next = saveLocation({
       city: f.city.trim() || saved?.city || "Karachi",
       area: near && saved ? saved.area : "Pinned location",
-      address: near && saved ? saved.address : (f.address.trim() || undefined),
+      address: near && saved ? saved.address : undefined,
       latitude: v.latitude, longitude: v.longitude, source: "pin",
     });
     appliedStamp.current = next.stamp;
@@ -99,12 +89,18 @@ export default function CheckoutPage() {
     if (!loc) e.location = "Please set your delivery location on the map";
     else if (outOfRange) e.location = quote?.delivery_message ?? "Sorry, that location is outside our delivery range";
     if (f.city.trim().length < 2) e.city = "Please enter your city";
+    if (f.address.trim().length < 10) e.address = "Please enter your full address: house or building, floor, street and sector";
     setErrors(e);
     return Object.keys(e).length === 0;
   }
 
-  // The delivery address comes from the location chosen in the popup (no separate field on this page).
-  const deliveryAddress = () => f.address.trim() || (saved ? (saved.address ?? `${saved.area}, ${saved.city}`) : "") || `Pinned location, ${f.city.trim()}`;
+  // What is saved on the order: the customer's own full address, followed by the area chosen in the popup (so the rider sees both).
+  const deliveryAddress = () => {
+    const typed = f.address.trim().replace(/\s+/g, " ");
+    const area = saved && saved.area !== "Pinned location" ? (saved.address ?? `${saved.area}, ${saved.city}`) : f.city.trim();
+    const already = !!saved?.area && saved.area !== "Pinned location" && typed.toLowerCase().includes(saved.area.toLowerCase());
+    return (already || !area ? typed : `${typed}, ${area}`).slice(0, 300);
+  };
 
   async function submit(ev: React.FormEvent) {
     ev.preventDefault();
@@ -115,10 +111,10 @@ export default function CheckoutPage() {
       const res = await createOrder({
         idempotencyKey: keyRef.current,
         body: {
-          items: items.map(({ product_id, variant_id, addon_ids, quantity }) => ({ product_id, variant_id, addon_ids, quantity })),
+          items: items.map(toLine),
           latitude: loc!.latitude, longitude: loc!.longitude, coupon_code: coupon, customer_name: f.name.trim(), customer_phone: f.phone.trim(), customer_email: f.email.trim() || null,
-          city: f.city.trim(), address: deliveryAddress(), landmark: f.landmark.trim() || null,
-          instructions: withToppings(items, f.notes), payment_method: method,
+          city: f.city.trim(), address: deliveryAddress(), landmark: null,
+          instructions: null, payment_method: method,
         },
       }).unwrap();
       try { sessionStorage.setItem(`cravy-phone-${res.order_number}`, f.phone.trim()); } catch { /* private mode: the order page asks for the phone */ }
@@ -152,7 +148,7 @@ export default function CheckoutPage() {
           {saved && (
             <div className="flex items-start gap-3 rounded-2xl bg-forest-100 p-4 text-sm">
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-forest text-lg text-cream"><FiMapPin aria-hidden /></span>
-              <div className="min-w-0"><p className="font-bold text-forest">Delivering to {saved.area}, {saved.city}</p><p className="text-ink/70">Your delivery address is taken from this location. Add a landmark below to help the rider find you.</p></div>
+              <div className="min-w-0"><p className="font-bold text-forest">Delivering to {saved.area}, {saved.city}</p><p className="text-ink/70">Enter your full address below (building, floor, street, sector) so the rider can find you.</p></div>
             </div>
           )}
           <div className="grid gap-4 sm:grid-cols-2">
@@ -191,8 +187,14 @@ export default function CheckoutPage() {
               </div>
             ))}
           </div>
-          <label className="block">Nearby landmark (optional)<input className={field} value={f.landmark} onChange={set("landmark")} /></label>
-          <label className="block">Delivery instructions (optional)<textarea className={`${field} py-3`} rows={2} value={f.notes} onChange={set("notes")} /></label>
+          <label className="block">Full street address
+            <textarea
+              className={`${field} py-3`} rows={3} maxLength={200} value={f.address} onChange={set("address")} autoComplete="street-address"
+              placeholder="House / flat no., building name, floor, street, sector or block. Add a nearby landmark if you can."
+              aria-required="true" aria-invalid={!!errors.address} aria-describedby="address-err"
+            />
+            <Err k="address" />
+          </label>
         </section>
 
         <fieldset className="card p-5 sm:p-6">

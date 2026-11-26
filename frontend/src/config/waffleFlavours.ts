@@ -12,11 +12,11 @@ import chocoLuxe from "@/assets/chocoLux.webp";
  */
 export type WaffleTopping = { name: string; image?: StaticImageData | string };
 export const WAFFLE_TOPPING_LIST: WaffleTopping[] = [
-    { name: "Vanilla Cream Waffle", image: vanillaCream },
-    { name: "Strawberry Velvet", image: strawberryVelvet },
-    { name: "Blueberry Royale", image: blueberryRoyale },
-    { name: "Golden Caramel", image: goldenCaramel },
-    { name: "Choco Luxe", image: chocoLuxe },
+  { name: "Vanilla Cream Waffle", image: vanillaCream },
+  { name: "Strawberry Velvet", image: strawberryVelvet },
+  { name: "Blueberry Royale", image: blueberryRoyale },
+  { name: "Golden Caramel", image: goldenCaramel },
+  { name: "Choco Luxe", image: chocoLuxe },
 ];
 
 export const WAFFLE_CATEGORY = "waffle"; // the Waffle category (slug or name, any capitals, "waffles" also works)
@@ -30,3 +30,9 @@ export const toppingKey = key;
 export const isWaffleCategory = (s: string) => key(s).replace(/s$/, "") === WAFFLE_CATEGORY;
 /** true for a topping product that sits in the Waffle category (it is hidden from the menu cards and from the admin products list). */
 export const isHiddenWaffleTopping = (category: string, name: string) => isWaffleCategory(category) && SET.has(key(name));
+
+/** Picture used for a topping while the admin has not uploaded one (matched by name). Uploaded pictures always win. */
+const FALLBACK: Record<string, StaticImageData> = {
+  "vanilla cream waffle": vanillaCream, "strawberry velvet": strawberryVelvet, "blueberry royale": blueberryRoyale, "golden caramel": goldenCaramel, "choco luxe": chocoLuxe,
+};
+export const fallbackToppingImage = (name: string): StaticImageData | null => FALLBACK[key(name)] ?? null;

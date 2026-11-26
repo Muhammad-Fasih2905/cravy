@@ -1,16 +1,27 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { CartLineInput } from "@/lib/types";
 
+export type FlavourPick = { id: number; qty: number };
+
 export type CartItem = CartLineInput & {
-  key: string; // product + variant + addons, so identical selections merge
+  key: string; // product + variant + addons + free choices, so identical selections merge
   name: string; variantName: string | null; addonNames: string[];
   unitPrice: number; // display only; the server recalculates every price
-  /** Free waffle toppings the customer picked (names). Not a priced extra: they reach the kitchen in the order's delivery instructions. */
+  /** Free waffle choices (never priced): topping ids and ice-cream flavours with their scoop counts. Names are for display only. */
+  toppings?: number[];
+  flavours?: FlavourPick[];
   freeToppings?: string[];
 };
 
-const keyOf = (l: CartLineInput & { freeToppings?: string[] }) =>
-  `${l.product_id}:${l.variant_id ?? 0}:${[...l.addon_ids].sort().join(",")}:${[...(l.freeToppings ?? [])].sort().join("|")}`;
+/** The part of a cart line the server needs (ids and quantities only). Use it everywhere a quote or an order is sent. */
+export const toLine = (i: CartItem): CartLineInput & { toppings?: number[]; flavours?: FlavourPick[] } => ({
+  product_id: i.product_id, variant_id: i.variant_id, addon_ids: i.addon_ids, quantity: i.quantity,
+  ...(i.toppings?.length ? { toppings: i.toppings } : {}),
+  ...(i.flavours?.length ? { flavours: i.flavours } : {}),
+});
+
+const keyOf = (l: Omit<CartItem, "key">) =>
+  `${l.product_id}:${l.variant_id ?? 0}:${[...l.addon_ids].sort().join(",")}:t${[...(l.toppings ?? [])].sort().join(",")}:f${[...(l.flavours ?? [])].sort((a, b) => a.id - b.id).map((f) => `${f.id}x${f.qty}`).join(",")}`;
 
 const slice = createSlice({
   name: "cart",

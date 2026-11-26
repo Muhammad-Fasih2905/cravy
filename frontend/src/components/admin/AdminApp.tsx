@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FiBox, FiCheckCircle, FiFileText, FiGrid, FiList, FiMapPin, FiNavigation, FiPrinter, FiSettings, FiX } from "react-icons/fi";
+import { FiBox, FiCheckCircle, FiFileText, FiGrid, FiList, FiStar, FiMapPin, FiNavigation, FiPrinter, FiSettings, FiX } from "react-icons/fi";
 import { formatPKR } from "@/lib/money";
 import {
   useAdminLoginMutation, useAdminOrdersQuery, useAdminSaveSettingsMutation, useAdminSetPaymentMutation,
@@ -10,6 +10,8 @@ import {
 import { Select } from "../Select";
 import { AdminHeader } from "./AdminHeader";
 import { ProductsAdmin } from "./ProductsAdmin";
+import { WaffleOptionsAdmin } from "./WaffleOptionsAdmin";
+import { SalesChart } from "./SalesChart";
 import { AdminLogo } from "../brand/AdminLogo";
 import { DeliveryRates } from "../DeliveryRates";
 import { confirmToast } from "@/lib/notify";
@@ -28,7 +30,7 @@ const apiError = (e: unknown) => {
   return typeof d === "string" ? d : "Could not reach the server. Please try again.";
 };
 
-type Tab = "overview" | "orders" | "products" | "delivery" | "settings";
+type Tab = "overview" | "orders" | "products" | "waffle" | "delivery" | "settings";
 type OrderTab = "PENDING" | "COMPLETED" | "CANCELLED" | "ALL";
 
 /** A short chime for a new order (browsers allow it because the admin has already interacted with the page). */
@@ -72,7 +74,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
     document.title = n > 0 ? `(${n}) Pending orders | Cravy Admin` : "Admin | Cravy";
   }, [stats?.pending_orders]);
 
-  const tabs: [Tab, string, React.ElementType][] = [["overview", "Overview", FiGrid], ["orders", "Orders", FiList], ["products", "Products", FiBox], ["delivery", "Delivery", FiMapPin], ["settings", "Settings", FiSettings]];
+  const tabs: [Tab, string, React.ElementType][] = [["overview", "Overview", FiGrid], ["orders", "Orders", FiList], ["products", "Products", FiBox], ["waffle", "Waffle options", FiStar], ["delivery", "Delivery", FiMapPin], ["settings", "Settings", FiSettings]];
   const openPending = () => { setOrderTab("PENDING"); setTab("orders"); setAlerts([]); };
   return (
     <div className="min-h-screen bg-cream">
@@ -91,7 +93,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
         <div className="mb-4 flex justify-end print:hidden"><LivePill state={stream} /></div>
         <AnimatePresence mode="wait">
           <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-            {tab === "overview" && <Overview />}{tab === "orders" && <Orders filter={orderTab} setFilter={setOrderTab} />}{tab === "products" && <ProductsAdmin />}{tab === "delivery" && <DeliveryTab />}{tab === "settings" && <SettingsForm />}
+            {tab === "overview" && <Overview />}{tab === "orders" && <Orders filter={orderTab} setFilter={setOrderTab} />}{tab === "products" && <ProductsAdmin />}{tab === "waffle" && <WaffleOptionsAdmin />}{tab === "delivery" && <DeliveryTab />}{tab === "settings" && <SettingsForm />}
           </motion.div>
         </AnimatePresence>
       </main>
@@ -120,7 +122,6 @@ function Overview() {
   const { data: s, isError } = useAdminStatsQuery();
   if (isError) return <p role="alert">Could not load stats. Your session may have expired, please log in again.</p>;
   if (!s) return <div className="h-40 animate-pulse rounded-card bg-vanilla" />;
-  const max = Math.max(1, ...s.daily_sales.map((d) => d.total));
   const cards = [["Pending orders", s.pending_orders], ["To collect (pending)", formatPKR(s.pending_amount)], ["Completed", s.completed_orders], ["Total sales (received)", formatPKR(s.total_sales)], ["Today's orders", s.today_orders], ["Total orders", s.total_orders], ["Cancelled", s.cancelled_orders], ["Payments to verify", s.pending_payments]];
   return (
     <div className="space-y-6">
@@ -131,17 +132,8 @@ function Overview() {
           </motion.div>
         ))}
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section className="card p-5" aria-label="Sales received, last 7 days"><h2 className="mb-4 text-lg">Sales received, last 7 days</h2>
-          <div className="flex h-40 items-end gap-2">
-            {s.daily_sales.map((d) => (
-              <div key={d.date} className="flex flex-1 flex-col items-center gap-1" title={`${d.date}: ${formatPKR(d.total)}`}>
-                <motion.div className="w-full rounded-t-lg bg-mango" initial={{ height: 0 }} animate={{ height: `${(d.total / max) * 100}%` }} transition={{ duration: 0.6 }} />
-                <span className="text-xs">{d.date.slice(5)}</span>
-              </div>
-            ))}
-          </div>
-        </section>
+      <SalesChart />
+      <div className="grid gap-4">
         <section className="card p-5"><h2 className="mb-3 text-lg">Bestselling products</h2>
           {s.bestsellers.length === 0 ? <p>No orders yet.</p> : <ol className="space-y-2">{s.bestsellers.map((b) => <li key={b.name} className="flex justify-between"><span>{b.name}</span><strong>{b.quantity}</strong></li>)}</ol>}
         </section>

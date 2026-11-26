@@ -514,7 +514,7 @@ export function ProductsAdmin() {
             {adding ? <FiX aria-hidden /> : <FiPlus aria-hidden />}{adding ? "Close form" : "Add product"}
           </button>
         </div>
-        <div role="tablist" aria-label="Product status" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+        <div role="tablist" aria-label="Product status" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 py-2">
           {STATUS.map(([id, name]) => (
             <button key={id} role="tab" aria-selected={status === id} onClick={() => setStatus(id)}
               className={`inline-flex min-h-[40px] shrink-0 items-center gap-2 rounded-pill px-4 text-sm font-bold transition-colors ${status === id ? "bg-forest text-cream" : "bg-white text-forest ring-1 ring-vanilla-deep hover:bg-vanilla"}`}>
