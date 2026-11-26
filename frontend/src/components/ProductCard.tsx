@@ -27,7 +27,8 @@ const readFavs = (): number[] => {
   try { const v = JSON.parse(localStorage.getItem(FAV_KEY) ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "number") : []; } catch { return []; }
 };
 
-export function ProductCard({ p }: { p: Product }) {
+/** showToppings: set by the product page (LiveProduct) so the toppings and ice-cream flavours are shown right on the page. */
+export function ProductCard({ p, showToppings = false }: { p: Product; showToppings?: boolean }) {
   const dispatch = useAppDispatch();
   const [fav, setFav] = useState(false);
   useEffect(() => { setFav(readFavs().includes(p.id)); }, [p.id]);
@@ -52,7 +53,8 @@ export function ProductCard({ p }: { p: Product }) {
   const isWaffle = inWaffleMenu && !isWaffleTopping(p.name);
   const [customizing, setCustomizing] = useState(false);
   // On the waffle's own page the toppings and ice-cream flavours are shown right there (no pop-up); in the menu list "Add" opens the guided sheet.
-  const onOwnPage = usePathname() === `/menu/${p.slug}`;
+  const pathname = usePathname();
+  const onOwnPage = showToppings || pathname === `/menu/${p.slug}`;
   const [inline, setInline] = useState<{ c: WaffleChoice; valid: boolean } | null>(null);
   const sc = scoopsFor([variant?.name, ...addons.filter((a) => pickedIds.includes(a.id)).map((a) => a.name)]);
   const [mainBroken, setMainBroken] = useState(false); // a photo file that is missing on the server shows the placeholder, not a broken image
