@@ -20,7 +20,7 @@ export function CartDrawer() {
   useEffect(() => {
     if (!open || items.length === 0) return;
     const t = setTimeout(() => getQuote({
-      items: items.map(({ product_id, variant_id, addon_ids, quantity }) => ({ product_id, variant_id, addon_ids, quantity })),
+      items: items.map(toLine),
       coupon_code: applied,
     }), 250);
     return () => clearTimeout(t);
